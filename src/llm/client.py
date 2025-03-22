@@ -162,3 +162,18 @@ class LLMClient:
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding JSON from LLM response: {e}")
             return {"error": f"Invalid JSON: {str(e)}", "raw_response": response}
+    
+    # Alias for backward compatibility with existing code
+    async def generate_structured(self, prompt: str, schema: Dict, temperature: float = 0.0) -> Dict:
+        """
+        Alias for generate_structured_output for backward compatibility.
+        
+        Args:
+            prompt: The prompt to send to the LLM
+            schema: JSON schema for the expected output
+            temperature: Sampling temperature (0.0-1.0)
+            
+        Returns:
+            Structured data
+        """
+        return await self.generate_structured_output(prompt, schema, temperature)

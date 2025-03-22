@@ -113,11 +113,27 @@ class QueryResolutionComponent:
         except Exception as e:
             logger.warning(f"Error getting schema summary: {e}")
             schema_summary = {}
+        
+        # Get business glossary terms
+        glossary_terms = []
+        try:
+            glossary_terms = self.neo4j_client.get_glossary_terms(tenant_id)
+        except Exception as e:
+            logger.warning(f"Error getting glossary terms: {e}")
+        
+        # Get business metrics
+        business_metrics = []
+        try:
+            business_metrics = self.neo4j_client.get_glossary_metrics(tenant_id)
+        except Exception as e:
+            logger.warning(f"Error getting business metrics: {e}")
                 
         return {
             "tables": tables_info,
             "summary": schema_summary,
-            "tenant_id": tenant_id
+            "tenant_id": tenant_id,
+            "glossary_terms": glossary_terms,
+            "business_metrics": business_metrics
         }
     
     async def _resolve_entities(self, entity_mentions: List[str], schema_context: Dict[str, Any]) -> Dict[str, ResolvedEntity]:
@@ -136,8 +152,26 @@ class QueryResolutionComponent:
         # Get available tables
         available_tables = list(schema_context["tables"].keys())
         
+        # Get glossary terms and their mappings for lookup
+        glossary_term_mappings = {}
+        if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            for term in schema_context["glossary_terms"]:
+                term_name = term.get("name")
+                if not term_name:
+                    continue
+                    
+                # Try to get term details with mappings
+                try:
+                    term_details = self.neo4j_client.get_glossary_term_details(
+                        schema_context["tenant_id"], term_name
+                    )
+                    if term_details and "mapped_tables" in term_details and term_details["mapped_tables"]:
+                        glossary_term_mappings[term_name.lower()] = term_details["mapped_tables"]
+                except Exception as e:
+                    logger.warning(f"Error getting term details for {term_name}: {e}")
+        
         for entity in entity_mentions:
-            # Direct match
+            # Step 1: Direct match
             if entity in schema_context["tables"]:
                 resolved[entity] = ResolvedEntity(
                     table_name=entity,
@@ -146,7 +180,7 @@ class QueryResolutionComponent:
                 )
                 continue
             
-            # Try lowercase matching
+            # Step 2: Try lowercase matching
             entity_lower = entity.lower()
             for table_name in available_tables:
                 if table_name.lower() == entity_lower:
@@ -157,7 +191,47 @@ class QueryResolutionComponent:
                     )
                     break
             
-            # If still not resolved, try fuzzy matching using LLM
+            # Step 3: Check if entity matches a glossary term with table mappings
+            if entity not in resolved and entity_lower in glossary_term_mappings:
+                mapped_tables = glossary_term_mappings[entity_lower]
+                if mapped_tables and len(mapped_tables) > 0:
+                    # Use the first mapped table with high confidence
+                    resolved[entity] = ResolvedEntity(
+                        table_name=mapped_tables[0],
+                        confidence=0.85,
+                        resolution_method="glossary_term_mapping"
+                    )
+                    continue
+            
+            # Step 4: Try to fuzzy match with glossary terms
+            if entity not in resolved and "glossary_terms" in schema_context:
+                # Check if entity matches any term name approximately
+                for term in schema_context["glossary_terms"]:
+                    term_name = term.get("name", "")
+                    if not term_name:
+                        continue
+                        
+                    # Check for partial matches
+                    if entity_lower in term_name.lower() or term_name.lower() in entity_lower:
+                        # Check if term has mappings
+                        try:
+                            term_details = self.neo4j_client.get_glossary_term_details(
+                                schema_context["tenant_id"], term_name
+                            )
+                            if term_details and "mapped_tables" in term_details and term_details["mapped_tables"]:
+                                mapped_tables = term_details["mapped_tables"]
+                                if mapped_tables and len(mapped_tables) > 0:
+                                    # Use the first mapped table
+                                    resolved[entity] = ResolvedEntity(
+                                        table_name=mapped_tables[0],
+                                        confidence=0.75,
+                                        resolution_method="fuzzy_glossary_match"
+                                    )
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Error getting term details for fuzzy match {term_name}: {e}")
+            
+            # Step 5: If still not resolved, try fuzzy matching using LLM with enhanced context
             if entity not in resolved:
                 match_prompt = self._build_entity_matching_prompt(entity, schema_context)
                 match_schema = {
@@ -187,14 +261,37 @@ class QueryResolutionComponent:
             for table_name, table_info in schema_context["tables"].items()
         ])
         
+        # Add glossary terms that have mappings to tables
+        glossary_info = ""
+        if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            relevant_terms = []
+            for term in schema_context["glossary_terms"]:
+                term_name = term.get("name", "")
+                definition = term.get("definition", "")
+                
+                # Look for approximate matches to help with resolution
+                if term_name and (entity.lower() in term_name.lower() or 
+                                   term_name.lower() in entity.lower() or
+                                   any(word in term_name.lower() for word in entity.lower().split())):
+                    relevant_terms.append(f"- {term_name}: {definition[:100]}...")
+            
+            if relevant_terms:
+                glossary_info = "Relevant business glossary terms:\n" + "\n".join(relevant_terms)
+        
         return f"""
         I'm trying to match the entity "{entity}" mentioned in a database query to an actual database table.
         
         Available tables:
         {tables_info}
         
+        {glossary_info}
+        
         Please determine which table (if any) is the most likely match for "{entity}".
-        Consider plural/singular forms, abbreviations, and semantic connections.
+        Consider:
+        1. Plural/singular forms and abbreviations
+        2. Semantic connections and business terminology
+        3. If the entity matches a business term, identify which table that term refers to
+        4. Common naming patterns (e.g., "customers" referring to a "customer" table)
         
         Return a JSON object with:
         - table_name: The name of the matched table, or your best guess if no exact match
@@ -221,9 +318,29 @@ class QueryResolutionComponent:
                 columns = table_info.get("columns", [])
                 table_columns[table_name] = columns
         
+        # Get glossary term mappings to columns
+        glossary_column_mappings = {}
+        if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            for term in schema_context["glossary_terms"]:
+                term_name = term.get("name")
+                if not term_name:
+                    continue
+                    
+                # Try to get term details with mappings to columns
+                try:
+                    term_details = self.neo4j_client.get_glossary_term_details(
+                        schema_context["tenant_id"], term_name
+                    )
+                    if term_details and "mapped_columns" in term_details and term_details["mapped_columns"]:
+                        glossary_column_mappings[term_name.lower()] = term_details["mapped_columns"]
+                except Exception as e:
+                    logger.warning(f"Error getting term details for columns of {term_name}: {e}")
+        
         # For each attribute mention
         for attribute in attribute_mentions:
-            # Check direct matches across all tables
+            attribute_lower = attribute.lower()
+            
+            # Step 1: Check direct matches across all tables
             found = False
             for table_name, columns in table_columns.items():
                 for column in columns:
@@ -231,7 +348,7 @@ class QueryResolutionComponent:
                     if not column_name:
                         continue
                         
-                    if column_name.lower() == attribute.lower():
+                    if column_name.lower() == attribute_lower:
                         resolved[attribute] = ResolvedAttribute(
                             table_name=table_name,
                             column_name=column_name,
@@ -244,9 +361,58 @@ class QueryResolutionComponent:
                 if found:
                     break
             
-            # If not found, use LLM to resolve
+            # Step 2: Check if attribute matches a glossary term with column mappings
+            if not found and attribute_lower in glossary_column_mappings:
+                mapped_columns = glossary_column_mappings[attribute_lower]
+                if mapped_columns and len(mapped_columns) > 0:
+                    # Use the first mapped column with high confidence
+                    mapped_column = mapped_columns[0]
+                    if "table" in mapped_column and "column" in mapped_column:
+                        resolved[attribute] = ResolvedAttribute(
+                            table_name=mapped_column["table"],
+                            column_name=mapped_column["column"],
+                            confidence=0.85,
+                            resolution_method="glossary_term_mapping"
+                        )
+                        found = True
+            
+            # Step 3: Try to fuzzy match with glossary terms that map to columns
+            if not found and "glossary_terms" in schema_context:
+                # Check for partial matches with glossary terms
+                for term in schema_context["glossary_terms"]:
+                    term_name = term.get("name", "")
+                    if not term_name:
+                        continue
+                        
+                    # Check for partial matches
+                    if attribute_lower in term_name.lower() or term_name.lower() in attribute_lower:
+                        # Check if term has column mappings
+                        try:
+                            term_details = self.neo4j_client.get_glossary_term_details(
+                                schema_context["tenant_id"], term_name
+                            )
+                            if term_details and "mapped_columns" in term_details and term_details["mapped_columns"]:
+                                mapped_columns = term_details["mapped_columns"]
+                                if mapped_columns and len(mapped_columns) > 0:
+                                    # Use the first mapped column
+                                    mapped_column = mapped_columns[0]
+                                    if "table" in mapped_column and "column" in mapped_column:
+                                        # Only use it if the table is one of our resolved entities
+                                        if mapped_column["table"] in table_names:
+                                            resolved[attribute] = ResolvedAttribute(
+                                                table_name=mapped_column["table"],
+                                                column_name=mapped_column["column"],
+                                                confidence=0.75,
+                                                resolution_method="fuzzy_glossary_match"
+                                            )
+                                            found = True
+                                            break
+                        except Exception as e:
+                            logger.warning(f"Error getting column mappings for fuzzy match {term_name}: {e}")
+            
+            # Step 4: If not found, use LLM to resolve with enhanced context
             if not found:
-                match_prompt = self._build_attribute_matching_prompt(attribute, table_columns)
+                match_prompt = self._build_attribute_matching_prompt(attribute, table_columns, schema_context)
                 match_schema = {
                     "type": "object",
                     "properties": {
@@ -269,7 +435,7 @@ class QueryResolutionComponent:
                 
         return resolved
     
-    def _build_attribute_matching_prompt(self, attribute: str, table_columns: Dict[str, List[Dict]]) -> str:
+    def _build_attribute_matching_prompt(self, attribute: str, table_columns: Dict[str, List[Dict]], schema_context: Dict[str, Any] = None) -> str:
         """Build prompt for attribute matching"""
         columns_info = []
         for table_name, columns in table_columns.items():
@@ -283,14 +449,51 @@ class QueryResolutionComponent:
         
         columns_text = "\n".join(columns_info)
         
+        # Add relevant glossary terms if available
+        glossary_info = ""
+        if schema_context and "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            relevant_terms = []
+            for term in schema_context["glossary_terms"]:
+                term_name = term.get("name", "")
+                definition = term.get("definition", "")
+                
+                # Look for approximate matches to help with resolution
+                if term_name and (attribute.lower() in term_name.lower() or 
+                                   term_name.lower() in attribute.lower() or
+                                   any(word in term_name.lower() for word in attribute.lower().split())):
+                    # Try to get column mappings for this term
+                    try:
+                        term_details = self.neo4j_client.get_glossary_term_details(
+                            schema_context["tenant_id"], term_name
+                        )
+                        if term_details and "mapped_columns" in term_details:
+                            mapped_text = ", ".join([f"{m['table']}.{m['column']}" for m in term_details["mapped_columns"] if "table" in m and "column" in m])
+                            if mapped_text:
+                                relevant_terms.append(f"- {term_name}: {definition[:100]}... (maps to: {mapped_text})")
+                            else:
+                                relevant_terms.append(f"- {term_name}: {definition[:100]}...")
+                        else:
+                            relevant_terms.append(f"- {term_name}: {definition[:100]}...")
+                    except Exception:
+                        relevant_terms.append(f"- {term_name}: {definition[:100]}...")
+            
+            if relevant_terms:
+                glossary_info = "Relevant business glossary terms:\n" + "\n".join(relevant_terms)
+        
         return f"""
         I'm trying to match the attribute "{attribute}" mentioned in a database query to an actual database column.
         
         Available columns:
         {columns_text}
         
+        {glossary_info}
+        
         Please determine which column (if any) is the most likely match for "{attribute}".
-        Consider synonyms, abbreviations, and semantic connections.
+        Consider:
+        1. Synonyms, abbreviations, and semantic connections
+        2. Business terminology and concepts
+        3. If a glossary term maps to one of these columns, consider that information
+        4. Common naming patterns (e.g., "id" vs. "identifier")
         
         Return a JSON object with:
         - table_name: The name of the table containing the matched column
@@ -306,7 +509,61 @@ class QueryResolutionComponent:
         """Resolve semantic concepts to database constructs"""
         resolved = {}
         
-        for concept in identified_ambiguities:
+        # Try to match concepts with business glossary terms first
+        if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            for concept in identified_ambiguities:
+                concept_lower = concept.lower()
+                
+                # Check for exact matches with glossary terms
+                for term in schema_context["glossary_terms"]:
+                    term_name = term.get("name", "")
+                    if not term_name:
+                        continue
+                        
+                    # If we have an exact or close match
+                    if term_name.lower() == concept_lower or term_name.lower() in concept_lower or concept_lower in term_name.lower():
+                        try:
+                            # Get term details with mappings
+                            term_details = self.neo4j_client.get_glossary_term_details(
+                                schema_context["tenant_id"], term_name
+                            )
+                            
+                            if term_details:
+                                # Prepare implementation based on mappings
+                                implementation = {
+                                    "type": "glossary_term",
+                                    "sql_fragment": "",
+                                    "tables_involved": term_details.get("mapped_tables", []),
+                                    "columns_involved": [
+                                        f"{col['table']}.{col['column']}" 
+                                        for col in term_details.get("mapped_columns", [])
+                                        if "table" in col and "column" in col
+                                    ]
+                                }
+                                
+                                # If there are mappings, generate SQL fragment suggestion
+                                if implementation["tables_involved"] or implementation["columns_involved"]:
+                                    # Simple implementation - could be enhanced
+                                    if implementation["columns_involved"]:
+                                        implementation["sql_fragment"] = f"SELECT {', '.join(implementation['columns_involved'])} FROM {', '.join(set(implementation['tables_involved']))}"
+                                    elif implementation["tables_involved"]:
+                                        implementation["sql_fragment"] = f"SELECT * FROM {implementation['tables_involved'][0]}"
+                                
+                                # Create resolved concept
+                                resolved[concept] = ResolvedConcept(
+                                    concept=concept,
+                                    interpretation=term_details.get("definition", f"Business term: {term_name}"),
+                                    implementation=implementation,
+                                    confidence=0.9
+                                )
+                                break
+                        except Exception as e:
+                            logger.warning(f"Error resolving concept with glossary term {term_name}: {e}")
+        
+        # For any unresolved concepts, use LLM
+        unresolved_concepts = [c for c in identified_ambiguities if c not in resolved]
+        
+        for concept in unresolved_concepts:
             resolution_prompt = self._build_concept_resolution_prompt(concept, schema_context)
             resolution_schema = {
                 "type": "object",
@@ -370,14 +627,66 @@ class QueryResolutionComponent:
         
         tables_text = "\n".join(tables_info)
         
+        # Find relevant glossary terms
+        glossary_info = ""
+        if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            concept_lower = concept.lower()
+            relevant_terms = []
+            
+            for term in schema_context["glossary_terms"]:
+                term_name = term.get("name", "")
+                if not term_name:
+                    continue
+                    
+                term_definition = term.get("definition", "")
+                
+                # Check if term is relevant to the concept
+                if (concept_lower in term_name.lower() or 
+                    term_name.lower() in concept_lower or 
+                    any(word in term_name.lower() for word in concept_lower.split()) or
+                    concept_lower in term_definition.lower()):
+                    # Try to get mappings
+                    try:
+                        term_details = self.neo4j_client.get_glossary_term_details(
+                            schema_context["tenant_id"], term_name
+                        )
+                        
+                        if term_details:
+                            # Format mappings information
+                            tables_mapped = term_details.get("mapped_tables", [])
+                            columns_mapped = term_details.get("mapped_columns", [])
+                            
+                            mappings_info = ""
+                            if tables_mapped:
+                                mappings_info += f"\n    Tables: {', '.join(tables_mapped)}"
+                            
+                            if columns_mapped:
+                                formatted_cols = [f"{col['table']}.{col['column']}" for col in columns_mapped if "table" in col and "column" in col]
+                                if formatted_cols:
+                                    mappings_info += f"\n    Columns: {', '.join(formatted_cols)}"
+                            
+                            if mappings_info:
+                                relevant_terms.append(f"- {term_name}: {term_definition[:150]}...{mappings_info}")
+                            else:
+                                relevant_terms.append(f"- {term_name}: {term_definition[:200]}...")
+                    except Exception:
+                        # Fall back to basic term information
+                        relevant_terms.append(f"- {term_name}: {term_definition[:200]}...")
+            
+            if relevant_terms:
+                glossary_info = "Relevant business glossary terms:\n" + "\n".join(relevant_terms)
+        
         return f"""
         I'm trying to interpret the semantic concept "{concept}" in a database query and map it to database constructs.
         
         Database schema:
         {tables_text}
         
+        {glossary_info}
+        
         Please interpret this concept and suggest how it could be implemented using SQL constructs.
         Consider different possible interpretations if ambiguous.
+        If there are relevant business glossary terms, use those to guide your interpretation.
         
         Return a JSON object with:
         - interpretation: A clear interpretation of the concept

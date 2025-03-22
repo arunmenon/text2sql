@@ -1069,3 +1069,197 @@ class Neo4jClient:
         
         result = self._execute_query(query, params)
         return result[0]["ws"] if result else None
+        
+    def get_business_glossary(self, tenant_id: str) -> Dict:
+        """
+        Get the business glossary for a tenant.
+        
+        Args:
+            tenant_id: Tenant ID
+            
+        Returns:
+            Business glossary node data or None if not found
+        """
+        query = """
+        MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
+        RETURN g LIMIT 1
+        """
+        
+        params = {"tenant_id": tenant_id}
+        
+        result = self._execute_query(query, params)
+        return result[0]["g"] if result else None
+    
+    def get_glossary_terms(self, tenant_id: str) -> List[Dict]:
+        """
+        Get all glossary terms for a tenant.
+        
+        Args:
+            tenant_id: Tenant ID
+            
+        Returns:
+            List of glossary term nodes
+        """
+        query = """
+        MATCH (g:BusinessGlossary {tenant_id: $tenant_id})-[:HAS_TERM]->(t:GlossaryTerm)
+        RETURN t
+        ORDER BY t.name
+        """
+        
+        params = {"tenant_id": tenant_id}
+        
+        result = self._execute_query(query, params)
+        return [record["t"] for record in result]
+        
+    def get_table_details(self, tenant_id: str, table_name: str) -> Dict:
+        """
+        Get detailed information about a specific table.
+        
+        Args:
+            tenant_id: Tenant ID
+            table_name: Table name
+            
+        Returns:
+            Dictionary with table details including columns
+        """
+        query = """
+        MATCH (t:Table {tenant_id: $tenant_id, name: $table_name})
+        RETURN t
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "table_name": table_name
+        }
+        
+        result = self._execute_query(query, params)
+        if not result:
+            return None
+            
+        table = result[0]["t"]
+        
+        # Get columns
+        columns = self.get_columns_for_table(tenant_id, table_name)
+        
+        # Add columns to table details
+        table_details = dict(table)
+        table_details["columns"] = columns
+        
+        return table_details
+    
+    def get_glossary_term_details(self, tenant_id: str, term_name: str) -> Dict:
+        """
+        Get detailed information about a specific glossary term including mappings.
+        
+        Args:
+            tenant_id: Tenant ID
+            term_name: Term name
+            
+        Returns:
+            Dictionary with term details including mappings to tables/columns
+        """
+        query = """
+        MATCH (t:GlossaryTerm {tenant_id: $tenant_id, name: $term_name})
+        OPTIONAL MATCH (t)-[:MAPS_TO]->(entity)
+        RETURN t,
+            collect(distinct case when 'Table' in labels(entity) then entity.name else null end) AS mapped_tables,
+            collect(distinct case when 'Column' in labels(entity) then {table: entity.table_name, column: entity.name} else null end) AS mapped_columns
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "term_name": term_name
+        }
+        
+        result = self._execute_query(query, params)
+        if not result:
+            return None
+            
+        record = result[0]
+        term = record["t"]
+        
+        # Filter out None values
+        mapped_tables = [t for t in record["mapped_tables"] if t is not None]
+        mapped_columns = [c for c in record["mapped_columns"] if c is not None]
+        
+        term_details = dict(term)
+        term_details["mapped_tables"] = mapped_tables
+        term_details["mapped_columns"] = mapped_columns
+        
+        return term_details
+    
+    def search_glossary_terms(self, tenant_id: str, search_text: str) -> List[Dict]:
+        """
+        Search for glossary terms that match the search text.
+        
+        Args:
+            tenant_id: Tenant ID
+            search_text: Text to search for in term names and definitions
+            
+        Returns:
+            List of matching glossary terms
+        """
+        # Prepare search text for CONTAINS clause (case-insensitive)
+        search_lower = search_text.lower()
+        
+        query = """
+        MATCH (g:BusinessGlossary {tenant_id: $tenant_id})-[:HAS_TERM]->(t:GlossaryTerm)
+        WHERE toLower(t.name) CONTAINS $search_text OR toLower(t.definition) CONTAINS $search_text
+        RETURN t
+        ORDER BY t.name
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "search_text": search_lower
+        }
+        
+        result = self._execute_query(query, params)
+        return [record["t"] for record in result]
+    
+    def get_glossary_metrics(self, tenant_id: str) -> List[Dict]:
+        """
+        Get all business metrics from the glossary.
+        
+        Args:
+            tenant_id: Tenant ID
+            
+        Returns:
+            List of business metric nodes
+        """
+        query = """
+        MATCH (g:BusinessGlossary {tenant_id: $tenant_id})-[:HAS_METRIC]->(m:BusinessMetric)
+        RETURN m
+        ORDER BY m.name
+        """
+        
+        params = {"tenant_id": tenant_id}
+        
+        result = self._execute_query(query, params)
+        return [record["m"] for record in result]
+    
+    def get_term_relationships(self, tenant_id: str, term_name: str) -> List[Dict]:
+        """
+        Get relationships between a glossary term and other terms.
+        
+        Args:
+            tenant_id: Tenant ID
+            term_name: Term name
+            
+        Returns:
+            List of related terms with relationship type
+        """
+        query = """
+        MATCH (t1:GlossaryTerm {tenant_id: $tenant_id, name: $term_name})-[r:RELATED_TO]->(t2:GlossaryTerm)
+        RETURN t2.name AS related_term, r.type AS relationship_type
+        UNION
+        MATCH (t2:GlossaryTerm)-[r:RELATED_TO]->(t1:GlossaryTerm {tenant_id: $tenant_id, name: $term_name})
+        RETURN t2.name AS related_term, r.type AS relationship_type
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "term_name": term_name
+        }
+        
+        return self._execute_query(query, params)
