@@ -277,8 +277,12 @@ class Neo4jClient:
         if weight is None:
             weight = confidence
             
-        # Initialize metadata if not provided
-        metadata = metadata or {}
+        # Initialize metadata - Neo4j doesn't accept Dict objects directly
+        # Convert dict to JSON string to avoid Neo4j type errors
+        metadata_str = None
+        if metadata:
+            import json
+            metadata_str = json.dumps(metadata)
         
         query = """
         MATCH (source:Column {tenant_id: $tenant_id, table_name: $source_table, name: $source_column})
@@ -292,7 +296,7 @@ class Neo4jClient:
             r.relationship_type = $relationship_type,
             r.weight = $weight,
             r.usage_count = 0,
-            r.metadata = $metadata,
+            r.metadata_str = $metadata_str,
             r.created_at = datetime()
         ON MATCH SET
             r.confidence = CASE 
@@ -311,9 +315,9 @@ class Neo4jClient:
                 WHEN $weight > r.weight THEN $weight
                 ELSE r.weight
             END,
-            r.metadata = CASE
-                WHEN r.metadata IS NULL THEN $metadata
-                ELSE r.metadata
+            r.metadata_str = CASE
+                WHEN r.metadata_str IS NULL THEN $metadata_str
+                ELSE r.metadata_str
             END,
             r.updated_at = datetime()
         RETURN source, r, target
@@ -329,7 +333,7 @@ class Neo4jClient:
             "detection_method": detection_method,
             "relationship_type": relationship_type,
             "weight": weight,
-            "metadata": metadata
+            "metadata_str": metadata_str
         }
         
         result = self._execute_query(query, params)
@@ -760,6 +764,27 @@ class Neo4jClient:
             formatted_paths.append(formatted_path)
             
         return formatted_paths
+        
+    def get_datasets_for_tenant(self, tenant_id: str) -> List[Dict]:
+        """
+        Get all datasets for a tenant.
+        
+        Args:
+            tenant_id: Tenant ID
+            
+        Returns:
+            List of dataset data
+        """
+        query = """
+        MATCH (t:Tenant {id: $tenant_id})-[:OWNS]->(d:Dataset)
+        RETURN d
+        ORDER BY d.name
+        """
+        
+        params = {"tenant_id": tenant_id}
+        
+        result = self._execute_query(query, params)
+        return [record["d"] for record in result]
         
     # Backward compatibility for existing code
     def find_join_path(self, tenant_id: str, source_table: str, target_table: str, 
