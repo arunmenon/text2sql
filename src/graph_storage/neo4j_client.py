@@ -252,9 +252,11 @@ class Neo4jClient:
     
     def create_relationship(self, tenant_id: str, source_table: str, source_column: str, 
                           target_table: str, target_column: str, 
-                          confidence: float, detection_method: str) -> Dict:
+                          confidence: float, detection_method: str,
+                          relationship_type: str = None, weight: float = None,
+                          metadata: Dict = None) -> Dict:
         """
-        Create a relationship between two columns.
+        Create a relationship between two columns with weight and metadata.
         
         Args:
             tenant_id: Tenant ID
@@ -264,10 +266,20 @@ class Neo4jClient:
             target_column: Target column name
             confidence: Confidence score (0.0-1.0)
             detection_method: Method used to detect relationship
+            relationship_type: Type of relationship (one-to-many, etc.)
+            weight: Edge weight for path finding (defaults to confidence)
+            metadata: Additional metadata about the relationship
             
         Returns:
             Created relationship data
         """
+        # If weight is not provided, use confidence
+        if weight is None:
+            weight = confidence
+            
+        # Initialize metadata if not provided
+        metadata = metadata or {}
+        
         query = """
         MATCH (source:Column {tenant_id: $tenant_id, table_name: $source_table, name: $source_column})
         MATCH (target:Column {tenant_id: $tenant_id, table_name: $target_table, name: $target_column})
@@ -277,6 +289,10 @@ class Neo4jClient:
         ON CREATE SET
             r.confidence = $confidence,
             r.detection_method = $detection_method,
+            r.relationship_type = $relationship_type,
+            r.weight = $weight,
+            r.usage_count = 0,
+            r.metadata = $metadata,
             r.created_at = datetime()
         ON MATCH SET
             r.confidence = CASE 
@@ -286,6 +302,18 @@ class Neo4jClient:
             r.detection_method = CASE 
                 WHEN r.is_verified = true THEN r.detection_method 
                 ELSE $detection_method 
+            END,
+            r.relationship_type = CASE
+                WHEN r.relationship_type IS NULL THEN $relationship_type
+                ELSE r.relationship_type
+            END,
+            r.weight = CASE
+                WHEN $weight > r.weight THEN $weight
+                ELSE r.weight
+            END,
+            r.metadata = CASE
+                WHEN r.metadata IS NULL THEN $metadata
+                ELSE r.metadata
             END,
             r.updated_at = datetime()
         RETURN source, r, target
@@ -298,7 +326,48 @@ class Neo4jClient:
             "target_table": target_table,
             "target_column": target_column,
             "confidence": confidence,
-            "detection_method": detection_method
+            "detection_method": detection_method,
+            "relationship_type": relationship_type,
+            "weight": weight,
+            "metadata": metadata
+        }
+        
+        result = self._execute_query(query, params)
+        return result[0] if result else None
+        
+    def update_relationship_weight(self, tenant_id: str, source_table: str, source_column: str,
+                                  target_table: str, target_column: str, weight_adjustment: float) -> Dict:
+        """
+        Update relationship weight based on usage or new information.
+        
+        Args:
+            tenant_id: Tenant ID
+            source_table: Source table name
+            source_column: Source column name
+            target_table: Target table name
+            target_column: Target column name
+            weight_adjustment: Amount to adjust weight
+            
+        Returns:
+            Updated relationship data
+        """
+        query = """
+        MATCH (source:Column {tenant_id: $tenant_id, table_name: $source_table, name: $source_column})
+        MATCH (target:Column {tenant_id: $tenant_id, table_name: $target_table, name: $target_column})
+        MATCH (source)-[r:LIKELY_REFERENCES]->(target)
+        SET r.weight = r.weight + $weight_adjustment,
+            r.usage_count = COALESCE(r.usage_count, 0) + 1,
+            r.last_used = datetime()
+        RETURN source, r, target
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "source_table": source_table,
+            "source_column": source_column,
+            "target_table": target_table,
+            "target_column": target_column,
+            "weight_adjustment": weight_adjustment
         }
         
         result = self._execute_query(query, params)
@@ -417,10 +486,286 @@ class Neo4jClient:
         
         return self._execute_query(query, params)
     
+    def find_join_paths(self, tenant_id: str, source_table: str, target_table: str,
+                      min_confidence: float = 0.5, strategy: str = "default", 
+                      max_paths: int = 3, max_hops: int = 5) -> List[Dict]:
+        """
+        Find possible join paths between two tables with multiple strategies.
+        
+        Args:
+            tenant_id: Tenant ID
+            source_table: Source table name
+            target_table: Target table name
+            min_confidence: Minimum confidence threshold
+            strategy: Path finding strategy:
+                - "default": Shortest path with highest confidence
+                - "weighted": Path with highest total weight
+                - "usage": Path with highest usage count
+                - "verified": Prioritize verified relationships
+                - "all": Return multiple path strategies
+            max_paths: Maximum number of paths to return per strategy
+            max_hops: Maximum number of hops in path
+            
+        Returns:
+            List of possible paths with details
+        """
+        strategies = {
+            "default": self._find_default_join_paths,
+            "weighted": self._find_weighted_join_paths,
+            "usage": self._find_usage_based_join_paths,
+            "verified": self._find_verified_join_paths,
+            "all": self._find_all_join_paths
+        }
+        
+        # Use the specified strategy or default
+        finder = strategies.get(strategy, self._find_default_join_paths)
+        
+        return finder(tenant_id, source_table, target_table, min_confidence, max_paths, max_hops)
+    
+    def _find_default_join_paths(self, tenant_id: str, source_table: str, target_table: str,
+                               min_confidence: float, max_paths: int, max_hops: int) -> List[Dict]:
+        """Find join paths using default strategy (shortest path with highest confidence)"""
+        query = """
+        MATCH (source:Table {tenant_id: $tenant_id, name: $source_table})
+        MATCH (target:Table {tenant_id: $tenant_id, name: $target_table})
+        MATCH path = shortestPath(
+            (source)-[:HAS_COLUMN]->(:Column)-[:LIKELY_REFERENCES*1..{max_hops}]->(:Column)<-[:HAS_COLUMN]-(target)
+        )
+        WHERE all(r in relationships(path) WHERE (r.confidence >= $min_confidence OR r.is_verified = true))
+        WITH path,
+            [n in nodes(path) WHERE n:Column | n.name] as columns,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES'] as refs,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | r.confidence] as confidences,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | COALESCE(r.weight, r.confidence)] as weights
+        RETURN path, 
+            columns,
+            confidences,
+            weights,
+            reduce(s = 1.0, r IN refs | s * r.confidence) as path_confidence,
+            reduce(s = 0.0, w IN weights | s + w) as path_weight,
+            length(path) as path_length,
+            'default' as strategy
+        ORDER BY path_length ASC, path_confidence DESC
+        LIMIT {max_paths}
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "source_table": source_table,
+            "target_table": target_table,
+            "min_confidence": min_confidence,
+            "max_hops": max_hops,
+            "max_paths": max_paths
+        }
+        
+        results = self._execute_query(query, params)
+        return self._format_path_results(results)
+    
+    def _find_weighted_join_paths(self, tenant_id: str, source_table: str, target_table: str,
+                                min_confidence: float, max_paths: int, max_hops: int) -> List[Dict]:
+        """Find join paths using weighted strategy (highest total weight)"""
+        query = """
+        MATCH (source:Table {tenant_id: $tenant_id, name: $source_table})
+        MATCH (target:Table {tenant_id: $tenant_id, name: $target_table})
+        MATCH path = (source)-[:HAS_COLUMN]->(:Column)-[:LIKELY_REFERENCES*1..{max_hops}]->(:Column)<-[:HAS_COLUMN]-(target)
+        WHERE all(r in relationships(path) WHERE (r.confidence >= $min_confidence OR r.is_verified = true))
+        WITH path,
+            [n in nodes(path) WHERE n:Column | n.name] as columns,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES'] as refs,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | r.confidence] as confidences,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | COALESCE(r.weight, r.confidence)] as weights
+        RETURN path, 
+            columns,
+            confidences,
+            weights,
+            reduce(s = 1.0, r IN refs | s * r.confidence) as path_confidence,
+            reduce(s = 0.0, w IN weights | s + w) as path_weight,
+            length(path) as path_length,
+            'weighted' as strategy
+        ORDER BY path_weight DESC, path_length ASC
+        LIMIT {max_paths}
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "source_table": source_table,
+            "target_table": target_table,
+            "min_confidence": min_confidence,
+            "max_hops": max_hops,
+            "max_paths": max_paths
+        }
+        
+        results = self._execute_query(query, params)
+        return self._format_path_results(results)
+    
+    def _find_usage_based_join_paths(self, tenant_id: str, source_table: str, target_table: str,
+                                   min_confidence: float, max_paths: int, max_hops: int) -> List[Dict]:
+        """Find join paths using usage-based strategy (most frequently used)"""
+        query = """
+        MATCH (source:Table {tenant_id: $tenant_id, name: $source_table})
+        MATCH (target:Table {tenant_id: $tenant_id, name: $target_table})
+        MATCH path = (source)-[:HAS_COLUMN]->(:Column)-[:LIKELY_REFERENCES*1..{max_hops}]->(:Column)<-[:HAS_COLUMN]-(target)
+        WHERE all(r in relationships(path) WHERE (r.confidence >= $min_confidence OR r.is_verified = true))
+        WITH path,
+            [n in nodes(path) WHERE n:Column | n.name] as columns,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES'] as refs,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | r.confidence] as confidences,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | COALESCE(r.usage_count, 0)] as usage_counts
+        RETURN path, 
+            columns,
+            confidences,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | COALESCE(r.weight, r.confidence)] as weights,
+            reduce(s = 1.0, r IN refs | s * r.confidence) as path_confidence,
+            reduce(s = 0, c IN usage_counts | s + c) as total_usage,
+            length(path) as path_length,
+            'usage' as strategy
+        ORDER BY total_usage DESC, path_length ASC, path_confidence DESC
+        LIMIT {max_paths}
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "source_table": source_table,
+            "target_table": target_table,
+            "min_confidence": min_confidence,
+            "max_hops": max_hops,
+            "max_paths": max_paths
+        }
+        
+        results = self._execute_query(query, params)
+        return self._format_path_results(results)
+    
+    def _find_verified_join_paths(self, tenant_id: str, source_table: str, target_table: str,
+                                min_confidence: float, max_paths: int, max_hops: int) -> List[Dict]:
+        """Find join paths prioritizing verified relationships"""
+        query = """
+        MATCH (source:Table {tenant_id: $tenant_id, name: $source_table})
+        MATCH (target:Table {tenant_id: $tenant_id, name: $target_table})
+        MATCH path = (source)-[:HAS_COLUMN]->(:Column)-[:LIKELY_REFERENCES*1..{max_hops}]->(:Column)<-[:HAS_COLUMN]-(target)
+        WHERE all(r in relationships(path) WHERE (r.confidence >= $min_confidence OR r.is_verified = true))
+        WITH path,
+            [n in nodes(path) WHERE n:Column | n.name] as columns,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES'] as refs,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | r.confidence] as confidences,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | CASE WHEN r.is_verified = true THEN 1 ELSE 0 END] as is_verified
+        RETURN path, 
+            columns,
+            confidences,
+            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | COALESCE(r.weight, r.confidence)] as weights,
+            reduce(s = 1.0, r IN refs | s * r.confidence) as path_confidence,
+            reduce(s = 0, v IN is_verified | s + v) as verified_count,
+            length(path) as path_length,
+            'verified' as strategy
+        ORDER BY verified_count DESC, path_length ASC, path_confidence DESC
+        LIMIT {max_paths}
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "source_table": source_table,
+            "target_table": target_table,
+            "min_confidence": min_confidence,
+            "max_hops": max_hops,
+            "max_paths": max_paths
+        }
+        
+        results = self._execute_query(query, params)
+        return self._format_path_results(results)
+    
+    def _find_all_join_paths(self, tenant_id: str, source_table: str, target_table: str,
+                           min_confidence: float, max_paths: int, max_hops: int) -> List[Dict]:
+        """Find join paths using all strategies"""
+        # Get paths from all strategies
+        default_paths = self._find_default_join_paths(
+            tenant_id, source_table, target_table, min_confidence, max_paths, max_hops
+        )
+        weighted_paths = self._find_weighted_join_paths(
+            tenant_id, source_table, target_table, min_confidence, max_paths, max_hops
+        )
+        usage_paths = self._find_usage_based_join_paths(
+            tenant_id, source_table, target_table, min_confidence, max_paths, max_hops
+        )
+        verified_paths = self._find_verified_join_paths(
+            tenant_id, source_table, target_table, min_confidence, max_paths, max_hops
+        )
+        
+        # Combine all paths and add strategy information
+        all_paths = default_paths + weighted_paths + usage_paths + verified_paths
+        
+        # Sort by combined score (this example prioritizes verified and weighted paths)
+        # Could be customized based on specific prioritization needs
+        return sorted(all_paths, key=lambda p: (
+            p.get("verified_count", 0) * 10 +
+            p.get("path_weight", 0) * 5 + 
+            p.get("path_confidence", 0) * 3 - 
+            p.get("path_length", 10)
+        ), reverse=True)[:max_paths]
+    
+    def _format_path_results(self, results: List[Dict]) -> List[Dict]:
+        """Format path results into a standardized structure"""
+        formatted_paths = []
+        
+        for result in results:
+            # Extract path nodes and relationships
+            path = result.get("path")
+            if not path:
+                continue
+                
+            columns = result.get("columns", [])
+            confidences = result.get("confidences", [])
+            weights = result.get("weights", [])
+            
+            # Format join conditions
+            join_conditions = []
+            join_tables = []
+            
+            # Extract tables and join conditions from path
+            table_nodes = [n for n in path.nodes if hasattr(n, "labels") and "Table" in n.labels]
+            for i in range(len(table_nodes) - 1):
+                source_table = table_nodes[i]["name"]
+                target_table = table_nodes[i + 1]["name"]
+                
+                # Find columns connecting these tables
+                source_col = None
+                target_col = None
+                
+                # Simple implementation - in reality would need to analyze path structure
+                for j in range(len(columns) - 1):
+                    if columns[j].split(".")[0] == source_table and columns[j+1].split(".")[0] == target_table:
+                        source_col = columns[j]
+                        target_col = columns[j+1]
+                        break
+                
+                if source_col and target_col:
+                    join_conditions.append(f"{source_col} = {target_col}")
+                    join_tables.append((source_table, target_table))
+            
+            # Create formatted path object
+            formatted_path = {
+                "path_id": str(hash(str(path))),
+                "source_table": table_nodes[0]["name"] if table_nodes else "",
+                "target_table": table_nodes[-1]["name"] if table_nodes else "",
+                "join_conditions": join_conditions,
+                "join_tables": join_tables,
+                "path_length": result.get("path_length", 0),
+                "path_confidence": result.get("path_confidence", 0),
+                "path_weight": result.get("path_weight", 0),
+                "verified_count": result.get("verified_count", 0),
+                "strategy": result.get("strategy", "unknown"),
+                "columns": columns,
+                "confidences": confidences,
+                "weights": weights
+            }
+            
+            formatted_paths.append(formatted_path)
+            
+        return formatted_paths
+        
+    # Backward compatibility for existing code
     def find_join_path(self, tenant_id: str, source_table: str, target_table: str, 
                      min_confidence: float = 0.5) -> List[Dict]:
         """
-        Find possible join paths between two tables.
+        Find possible join paths between two tables (legacy method).
         
         Args:
             tenant_id: Tenant ID
@@ -431,27 +776,7 @@ class Neo4jClient:
         Returns:
             List of possible paths
         """
-        query = """
-        MATCH (source:Table {tenant_id: $tenant_id, name: $source_table})
-        MATCH (target:Table {tenant_id: $tenant_id, name: $target_table})
-        MATCH path = shortestPath(
-            (source)-[:HAS_COLUMN]->(:Column)-[:LIKELY_REFERENCES*1..5]->(:Column)<-[:HAS_COLUMN]-(target)
-        )
-        WHERE all(r in relationships(path) WHERE (r.confidence >= $min_confidence OR r.is_verified = true))
-        RETURN path,
-            [n in nodes(path) WHERE n:Column | n.name] as columns,
-            [r in relationships(path) WHERE type(r) = 'LIKELY_REFERENCES' | r.confidence] as confidences
-        LIMIT 5
-        """
-        
-        params = {
-            "tenant_id": tenant_id,
-            "source_table": source_table,
-            "target_table": target_table,
-            "min_confidence": min_confidence
-        }
-        
-        return self._execute_query(query, params)
+        return self.find_join_paths(tenant_id, source_table, target_table, min_confidence)
     
     def get_schema_summary(self, tenant_id: str) -> Dict:
         """
@@ -488,3 +813,234 @@ class Neo4jClient:
             "relationship_count": 0,
             "verified_relationship_count": 0
         }
+        
+    def update_table_metadata(self, tenant_id: str, table_name: str, metadata: Dict) -> Dict:
+        """
+        Update metadata for a table.
+        
+        Args:
+            tenant_id: Tenant ID
+            table_name: Table name
+            metadata: Metadata to update
+            
+        Returns:
+            Updated table data
+        """
+        # Create SET clause dynamically based on metadata keys
+        set_clauses = []
+        for key in metadata:
+            set_clauses.append(f"t.{key} = ${key}")
+        
+        # Always update the last_modified timestamp
+        set_clauses.append("t.last_modified = datetime()")
+        
+        query = f"""
+        MATCH (t:Table {{tenant_id: $tenant_id, name: $table_name}})
+        SET {', '.join(set_clauses)}
+        RETURN t
+        """
+        
+        # Add tenant_id and table_name to params
+        params = metadata.copy()
+        params["tenant_id"] = tenant_id
+        params["table_name"] = table_name
+        
+        result = self._execute_query(query, params)
+        return result[0]["t"] if result else None
+    
+    def update_column_metadata(self, tenant_id: str, table_name: str, column_name: str, metadata: Dict) -> Dict:
+        """
+        Update metadata for a column.
+        
+        Args:
+            tenant_id: Tenant ID
+            table_name: Table name
+            column_name: Column name
+            metadata: Metadata to update
+            
+        Returns:
+            Updated column data
+        """
+        # Create SET clause dynamically based on metadata keys
+        set_clauses = []
+        for key in metadata:
+            set_clauses.append(f"c.{key} = ${key}")
+        
+        # Always update the last_modified timestamp
+        set_clauses.append("c.last_modified = datetime()")
+        
+        query = f"""
+        MATCH (c:Column {{tenant_id: $tenant_id, table_name: $table_name, name: $column_name}})
+        SET {', '.join(set_clauses)}
+        RETURN c
+        """
+        
+        # Add tenant_id, table_name, and column_name to params
+        params = metadata.copy()
+        params["tenant_id"] = tenant_id
+        params["table_name"] = table_name
+        params["column_name"] = column_name
+        
+        result = self._execute_query(query, params)
+        return result[0]["c"] if result else None
+    
+    def update_dataset_metadata(self, tenant_id: str, dataset_id: str, metadata: Dict) -> Dict:
+        """
+        Update metadata for a dataset.
+        
+        Args:
+            tenant_id: Tenant ID
+            dataset_id: Dataset ID
+            metadata: Metadata to update
+            
+        Returns:
+            Updated dataset data
+        """
+        # Create SET clause dynamically based on metadata keys
+        set_clauses = []
+        for key in metadata:
+            set_clauses.append(f"d.{key} = ${key}")
+        
+        # Always update the last_modified timestamp
+        set_clauses.append("d.last_modified = datetime()")
+        
+        query = f"""
+        MATCH (d:Dataset {{tenant_id: $tenant_id, name: $dataset_id}})
+        SET {', '.join(set_clauses)}
+        RETURN d
+        """
+        
+        # Add tenant_id and dataset_id to params
+        params = metadata.copy()
+        params["tenant_id"] = tenant_id
+        params["dataset_id"] = dataset_id
+        
+        result = self._execute_query(query, params)
+        return result[0]["d"] if result else None
+    
+    def store_business_glossary(self, tenant_id: str, dataset_id: str, glossary: str, metadata: Dict = None) -> Dict:
+        """
+        Store business glossary for a dataset.
+        
+        Args:
+            tenant_id: Tenant ID
+            dataset_id: Dataset ID
+            glossary: Business glossary text
+            metadata: Additional metadata
+            
+        Returns:
+            Created glossary node data
+        """
+        query = """
+        MATCH (d:Dataset {tenant_id: $tenant_id, name: $dataset_id})
+        MERGE (g:BusinessGlossary {tenant_id: $tenant_id, dataset_id: $dataset_id})
+        ON CREATE SET
+            g.content = $glossary,
+            g.created_at = datetime()
+        ON MATCH SET
+            g.content = $glossary,
+            g.updated_at = datetime()
+        
+        WITH g
+        
+        UNWIND keys($metadata) as key
+        SET g[key] = $metadata[key]
+        
+        MERGE (d)-[:HAS_GLOSSARY]->(g)
+        RETURN g
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "dataset_id": dataset_id,
+            "glossary": glossary,
+            "metadata": metadata or {}
+        }
+        
+        result = self._execute_query(query, params)
+        return result[0]["g"] if result else None
+    
+    def store_sample_queries(self, tenant_id: str, queries: str, metadata: Dict = None) -> Dict:
+        """
+        Store sample queries for a tenant.
+        
+        Args:
+            tenant_id: Tenant ID
+            queries: Sample SQL queries
+            metadata: Additional metadata
+            
+        Returns:
+            Created sample queries node data
+        """
+        query = """
+        MATCH (t:Tenant {id: $tenant_id})
+        MERGE (sq:SampleQueries {tenant_id: $tenant_id})
+        ON CREATE SET
+            sq.content = $queries,
+            sq.created_at = datetime()
+        ON MATCH SET
+            sq.content = $queries,
+            sq.updated_at = datetime()
+        
+        WITH sq
+        
+        UNWIND keys($metadata) as key
+        SET sq[key] = $metadata[key]
+        
+        MERGE (t)-[:HAS_SAMPLE_QUERIES]->(sq)
+        RETURN sq
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "queries": queries,
+            "metadata": metadata or {}
+        }
+        
+        result = self._execute_query(query, params)
+        return result[0]["sq"] if result else None
+    
+    def record_workflow_status(self, tenant_id: str, dataset_id: str, workflow_name: str, 
+                             status: str, metadata: Dict = None) -> Dict:
+        """
+        Record workflow execution status.
+        
+        Args:
+            tenant_id: Tenant ID
+            dataset_id: Dataset ID
+            workflow_name: Workflow name
+            status: Workflow status (completed, failed, etc.)
+            metadata: Additional metadata
+            
+        Returns:
+            Created workflow status node data
+        """
+        query = """
+        MATCH (d:Dataset {tenant_id: $tenant_id, name: $dataset_id})
+        CREATE (ws:WorkflowStatus {
+            tenant_id: $tenant_id,
+            dataset_id: $dataset_id,
+            workflow_name: $workflow_name,
+            status: $status,
+            created_at: datetime()
+        })
+        
+        WITH ws
+        
+        UNWIND keys($metadata) as key
+        SET ws[key] = $metadata[key]
+        
+        MERGE (d)-[:HAS_WORKFLOW_STATUS]->(ws)
+        RETURN ws
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "dataset_id": dataset_id,
+            "workflow_name": workflow_name,
+            "status": status,
+            "metadata": metadata or {}
+        }
+        
+        result = self._execute_query(query, params)
+        return result[0]["ws"] if result else None

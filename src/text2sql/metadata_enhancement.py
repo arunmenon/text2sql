@@ -1,13 +1,14 @@
 """
 Metadata Enhancement Workflow
 
-Enhances schema metadata with LLM-generated insights and annotations.
+Enhances schema metadata with LLM-generated insights and annotations for improved text-to-SQL.
 """
 import logging
 import os
 import asyncio
+import json
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple, Set
 
 from src.llm.client import LLMClient
 from src.graph_storage.neo4j_client import Neo4jClient
@@ -53,13 +54,25 @@ class SchemaEnhancementWorkflow:
             # 2. Enhance table descriptions
             await self._enhance_table_descriptions(tenant_id, tables)
             
-            # 3. Identify business domain
+            # 3. Enhance column descriptions
+            await self._enhance_column_descriptions(tenant_id, tables)
+            
+            # 4. Generate business glossary
+            await self._generate_business_glossary(tenant_id, dataset_id, tables)
+            
+            # 5. Analyze semantic relationships
+            await self._analyze_semantic_relationships(tenant_id, tables)
+            
+            # 6. Identify business domain
             await self._identify_business_domain(tenant_id, dataset_id, tables)
             
-            # 4. Generate sample queries
+            # 7. Generate concept tags
+            await self._generate_concept_tags(tenant_id, tables)
+            
+            # 8. Generate sample queries
             await self._generate_sample_queries(tenant_id, tables)
             
-            # 5. Record completion
+            # 9. Record completion
             self._record_workflow_completion(tenant_id, dataset_id)
             
             logging.info(f"Schema enhancement workflow completed for {tenant_id}/{dataset_id}")
@@ -72,6 +85,8 @@ class SchemaEnhancementWorkflow:
     
     async def _enhance_table_descriptions(self, tenant_id: str, tables: List[Dict[str, Any]]):
         """Enhance table descriptions with LLM"""
+        enhanced_count = 0
+        
         for table in tables:
             table_name = table.get("name")
             if not table_name:
@@ -91,9 +106,500 @@ class SchemaEnhancementWorkflow:
             # Generate enhanced description
             enhanced_description = await self.llm_client.generate(prompt)
             
-            # Store enhanced description in Neo4j
-            # This would require adding a method to Neo4jClient to update table metadata
+            # Update table metadata in Neo4j
+            if hasattr(self.neo4j_client, 'update_table_metadata'):
+                self.neo4j_client.update_table_metadata(
+                    tenant_id=tenant_id,
+                    table_name=table_name,
+                    metadata={
+                        "description": enhanced_description,
+                        "description_enhanced": True,
+                        "description_enhanced_at": datetime.now().isoformat()
+                    }
+                )
+                enhanced_count += 1
+            else:
+                logger.warning("Neo4jClient doesn't have update_table_metadata method")
+            
             logger.info(f"Enhanced description for table {table_name}")
+            
+        logger.info(f"Enhanced descriptions for {enhanced_count} tables")
+    
+    async def _enhance_column_descriptions(self, tenant_id: str, tables: List[Dict[str, Any]]):
+        """Enhance column descriptions with LLM"""
+        enhanced_count = 0
+        
+        for table in tables:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+                
+            # Get columns for the table
+            columns = self.neo4j_client.get_columns_for_table(tenant_id, table_name)
+            if not columns:
+                continue
+                
+            # Group columns without good descriptions (batch processing)
+            columns_to_enhance = []
+            for col in columns:
+                col_name = col.get("name") or col.get("column_name")
+                col_description = col.get("description", "")
+                
+                if not col_name:
+                    continue
+                    
+                if not col_description or len(col_description) < 30:
+                    columns_to_enhance.append(col)
+            
+            if not columns_to_enhance:
+                continue
+                
+            # Process columns in batches of 5 to avoid overloading the LLM
+            batch_size = 5
+            column_batches = [columns_to_enhance[i:i + batch_size] for i in range(0, len(columns_to_enhance), batch_size)]
+            
+            for batch in column_batches:
+                # Create prompt for column enhancement
+                prompt = self._build_column_enhancement_prompt(table_name, batch, columns)
+                
+                # Generate enhanced column descriptions
+                try:
+                    response = await self.llm_client.generate_structured_output(prompt, {
+                        "column_descriptions": [
+                            {
+                                "column_name": "string",
+                                "description": "string",
+                                "business_purpose": "string",
+                                "data_constraints": "string",
+                                "potential_joins": "string"
+                            }
+                        ]
+                    })
+                    
+                    # Update column metadata in Neo4j
+                    for col_desc in response.get("column_descriptions", []):
+                        col_name = col_desc.get("column_name")
+                        description = col_desc.get("description", "")
+                        
+                        if col_name and description:
+                            # Combine all fields into a rich description
+                            rich_description = f"{description}\n\nBusiness purpose: {col_desc.get('business_purpose', '')}\n\nData constraints: {col_desc.get('data_constraints', '')}\n\nPotential joins: {col_desc.get('potential_joins', '')}"
+                            
+                            if hasattr(self.neo4j_client, 'update_column_metadata'):
+                                self.neo4j_client.update_column_metadata(
+                                    tenant_id=tenant_id,
+                                    table_name=table_name,
+                                    column_name=col_name,
+                                    metadata={
+                                        "description": rich_description,
+                                        "business_purpose": col_desc.get("business_purpose", ""),
+                                        "data_constraints": col_desc.get("data_constraints", ""),
+                                        "potential_joins": col_desc.get("potential_joins", ""),
+                                        "description_enhanced": True,
+                                        "description_enhanced_at": datetime.now().isoformat()
+                                    }
+                                )
+                                enhanced_count += 1
+                            else:
+                                logger.warning("Neo4jClient doesn't have update_column_metadata method")
+                            
+                except Exception as e:
+                    logger.error(f"Error enhancing columns for {table_name}: {e}")
+            
+        logger.info(f"Enhanced descriptions for {enhanced_count} columns")
+    
+    async def _generate_business_glossary(self, tenant_id: str, dataset_id: str, tables: List[Dict[str, Any]]):
+        """Generate business glossary for the database"""
+        # Extract all table and column names for context
+        table_info = []
+        for table in tables:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+                
+            description = table.get("description", "No description")
+            columns = self.neo4j_client.get_columns_for_table(tenant_id, table_name)
+            column_info = [f"{col.get('name') or col.get('column_name')} ({col.get('data_type', 'unknown')})" 
+                          for col in columns if col.get('name') or col.get('column_name')]
+            
+            table_info.append({
+                "table": table_name,
+                "description": description,
+                "columns": column_info
+            })
+        
+        # Create prompt for glossary generation
+        prompt = f"""
+        Analyze the following database schema and generate a comprehensive business glossary.
+        
+        Database schema:
+        {json.dumps(table_info, indent=2)}
+        
+        For this database, create a business glossary that includes:
+        1. Important business terms found in the schema
+        2. Their definitions in plain business language
+        3. Technical mappings to tables/columns where relevant
+        4. Commonly used business metrics and KPIs derivable from this data
+        5. Common synonyms and related terms
+
+        Format your response as a structured glossary with clear term definitions.
+        """
+        
+        # Generate business glossary
+        glossary = await self.llm_client.generate(prompt)
+        
+        # Store glossary in Neo4j
+        if hasattr(self.neo4j_client, 'store_business_glossary'):
+            self.neo4j_client.store_business_glossary(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                glossary=glossary,
+                metadata={
+                    "generated_at": datetime.now().isoformat(),
+                    "schema_version": datetime.now().strftime("%Y%m%d")
+                }
+            )
+        else:
+            logger.warning("Neo4jClient doesn't have store_business_glossary method")
+            
+        logger.info(f"Generated business glossary for dataset {dataset_id}")
+    
+    async def _analyze_semantic_relationships(self, tenant_id: str, tables: List[Dict[str, Any]]):
+        """Analyze semantic relationships between tables"""
+        # Get existing relationships to avoid duplication
+        existing_relationships = set()
+        
+        for table in tables:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+                
+            rels = self.neo4j_client.get_relationships_for_table(tenant_id, table_name)
+            for rel in rels:
+                # Extract source and target column info
+                if 'source' in rel and 'target' in rel:
+                    source = rel['source']
+                    target = rel['target']
+                    
+                    source_table = source.get('table_name')
+                    source_col = source.get('name')
+                    target_table = target.get('table_name')
+                    target_col = target.get('name')
+                    
+                    if source_table and source_col and target_table and target_col:
+                        rel_key = f"{source_table}.{source_col}|{target_table}.{target_col}"
+                        existing_relationships.add(rel_key)
+        
+        # Analyze tables in pairs
+        total_relationships = 0
+        processed_pairs = set()
+        
+        for i, table1 in enumerate(tables):
+            for j, table2 in enumerate(tables):
+                # Skip self-comparison and already processed pairs
+                if i == j or f"{i}|{j}" in processed_pairs or f"{j}|{i}" in processed_pairs:
+                    continue
+                    
+                table1_name = table1.get("name")
+                table2_name = table2.get("name")
+                
+                if not table1_name or not table2_name:
+                    continue
+                    
+                # Skip pairs with no semantic relationship
+                if not self._might_have_semantic_relationship(table1, table2):
+                    continue
+                
+                # Get columns for context
+                table1_columns = self.neo4j_client.get_columns_for_table(tenant_id, table1_name)
+                table2_columns = self.neo4j_client.get_columns_for_table(tenant_id, table2_name)
+                
+                # Create prompt for relationship analysis
+                prompt = self._build_semantic_relationship_prompt(
+                    table1_name, table1_columns, 
+                    table2_name, table2_columns
+                )
+                
+                # Generate relationship analysis
+                try:
+                    response = await self.llm_client.generate_structured_output(prompt, {
+                        "semantic_relationships": [
+                            {
+                                "source_table": "string",
+                                "source_column": "string",
+                                "target_table": "string",
+                                "target_column": "string",
+                                "relationship_type": "string",  # one-to-many, many-to-many, etc.
+                                "confidence": "number",
+                                "explanation": "string"
+                            }
+                        ]
+                    })
+                    
+                    # Store relationships in Neo4j
+                    for rel in response.get("semantic_relationships", []):
+                        source_table = rel.get("source_table")
+                        source_column = rel.get("source_column")
+                        target_table = rel.get("target_table")
+                        target_column = rel.get("target_column")
+                        confidence = rel.get("confidence", 0.7)
+                        explanation = rel.get("explanation", "")
+                        relationship_type = rel.get("relationship_type", "")
+                        
+                        # Skip relationships below threshold
+                        if confidence < 0.6:
+                            continue
+                            
+                        # Skip existing relationships
+                        rel_key = f"{source_table}.{source_column}|{target_table}.{target_column}"
+                        if rel_key in existing_relationships:
+                            continue
+                        
+                        if source_table and source_column and target_table and target_column:
+                            self.neo4j_client.create_relationship(
+                                tenant_id=tenant_id,
+                                source_table=source_table,
+                                source_column=source_column,
+                                target_table=target_table,
+                                target_column=target_column,
+                                confidence=confidence,
+                                detection_method="llm_semantic",
+                                relationship_type=relationship_type,
+                                metadata={"explanation": explanation}
+                            )
+                            total_relationships += 1
+                            existing_relationships.add(rel_key)
+                    
+                except Exception as e:
+                    logger.error(f"Error analyzing relationship between {table1_name} and {table2_name}: {e}")
+                
+                # Mark this pair as processed
+                processed_pairs.add(f"{i}|{j}")
+        
+        logger.info(f"Added {total_relationships} semantic relationships")
+    
+    def _might_have_semantic_relationship(self, table1: Dict, table2: Dict) -> bool:
+        """Determine if two tables might have a semantic relationship worth analyzing"""
+        table1_name = table1.get("name", "").lower()
+        table2_name = table2.get("name", "").lower()
+        
+        # Check for name-based relationships
+        # e.g., "orders" and "order_items" or "customers" and "customer_addresses"
+        if table1_name in table2_name or table2_name in table1_name:
+            return True
+            
+        # Check for common business entity pairs
+        common_pairs = [
+            ("customers", "orders"),
+            ("products", "categories"),
+            ("users", "roles"),
+            ("invoices", "payments"),
+            ("employees", "departments"),
+            ("students", "courses"),
+            ("vendors", "purchases")
+        ]
+        
+        for entity1, entity2 in common_pairs:
+            if (entity1 in table1_name and entity2 in table2_name) or \
+               (entity1 in table2_name and entity2 in table1_name):
+                return True
+        
+        # Default to true to err on the side of analyzing more relationships
+        # In a production system, this could be more selective
+        return True
+    
+    async def _identify_business_domain(self, tenant_id: str, dataset_id: str, tables: List[Dict[str, Any]]):
+        """Identify business domain for the entire dataset"""
+        # Create context about tables and columns
+        table_info = []
+        for table in tables:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+                
+            description = table.get("description", "No description")
+            columns = self.neo4j_client.get_columns_for_table(tenant_id, table_name)
+            column_names = [col.get("name") or col.get("column_name") for col in columns if col.get("name") or col.get("column_name")]
+            
+            table_info.append(f"- Table: {table_name}\n  Description: {description}\n  Columns: {', '.join(column_names)}")
+        
+        # Create prompt for domain analysis
+        prompt = f"""
+        Analyze the following database schema and determine the business domain it represents:
+        
+        {"\n".join(table_info)}
+        
+        Please provide:
+        1. The primary business domain (e.g., retail, healthcare, finance, etc.)
+        2. Key business entities represented in this data
+        3. Potential business questions this data could answer
+        4. Industry-specific terminology relevant to this domain
+        5. Common business metrics and KPIs for this domain
+        
+        Format your response as a structured domain analysis.
+        """
+        
+        # Generate domain analysis
+        domain_analysis = await self.llm_client.generate(prompt)
+        
+        # Store domain analysis in Neo4j
+        if hasattr(self.neo4j_client, 'update_dataset_metadata'):
+            self.neo4j_client.update_dataset_metadata(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                metadata={
+                    "domain_analysis": domain_analysis,
+                    "analysis_generated_at": datetime.now().isoformat()
+                }
+            )
+        else:
+            logger.warning("Neo4jClient doesn't have update_dataset_metadata method")
+            
+        logger.info(f"Generated business domain analysis for dataset {dataset_id}")
+    
+    async def _generate_concept_tags(self, tenant_id: str, tables: List[Dict[str, Any]]):
+        """Generate concept tags for tables and columns"""
+        for table in tables:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+                
+            # Get columns for context
+            columns = self.neo4j_client.get_columns_for_table(tenant_id, table_name)
+            
+            # Create prompt for concept tagging
+            prompt = f"""
+            Analyze this database table and its columns to generate concept tags:
+            
+            Table: {table_name}
+            Description: {table.get('description', 'No description')}
+            
+            Columns:
+            {json.dumps([{
+                "name": col.get('name') or col.get('column_name', ''),
+                "data_type": col.get('data_type', 'unknown'),
+                "description": col.get('description', 'No description')
+            } for col in columns if col.get('name') or col.get('column_name')], indent=2)}
+            
+            For this table and its columns, provide:
+            1. A list of business concept tags for the table itself (e.g., Transaction, Customer Profile, Product Catalog)
+            2. For each column, assign concept tags that represent the semantic meaning (e.g., Personal Identifier, Timestamp, Amount, Status)
+            
+            Format your response as a structured JSON with table_tags and column_tags.
+            """
+            
+            # Generate tags
+            try:
+                response = await self.llm_client.generate_structured_output(prompt, {
+                    "table_tags": ["string"],
+                    "column_tags": [
+                        {
+                            "column_name": "string",
+                            "tags": ["string"]
+                        }
+                    ]
+                })
+                
+                # Store table tags in Neo4j
+                table_tags = response.get("table_tags", [])
+                if table_tags and hasattr(self.neo4j_client, 'update_table_metadata'):
+                    self.neo4j_client.update_table_metadata(
+                        tenant_id=tenant_id,
+                        table_name=table_name,
+                        metadata={"concept_tags": table_tags}
+                    )
+                
+                # Store column tags in Neo4j
+                for col_tag in response.get("column_tags", []):
+                    col_name = col_tag.get("column_name")
+                    tags = col_tag.get("tags", [])
+                    
+                    if col_name and tags and hasattr(self.neo4j_client, 'update_column_metadata'):
+                        self.neo4j_client.update_column_metadata(
+                            tenant_id=tenant_id,
+                            table_name=table_name,
+                            column_name=col_name,
+                            metadata={"concept_tags": tags}
+                        )
+                        
+            except Exception as e:
+                logger.error(f"Error generating concept tags for {table_name}: {e}")
+            
+        logger.info(f"Generated concept tags for tables and columns")
+    
+    async def _generate_sample_queries(self, tenant_id: str, tables: List[Dict[str, Any]]):
+        """Generate sample SQL queries based on the schema"""
+        if len(tables) < 2:
+            logger.info("Not enough tables to generate meaningful sample queries")
+            return
+            
+        # Get relationships for context
+        all_relationships = []
+        for table in tables:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+                
+            relationships = self.neo4j_client.get_relationships_for_table(tenant_id, table_name)
+            all_relationships.extend(relationships)
+        
+        # Format relationships for prompt
+        relationship_info = []
+        for rel in all_relationships:
+            if 'source' in rel and 'target' in rel and 'r' in rel:
+                source = rel['source']
+                target = rel['target']
+                r = rel['r']
+                
+                source_table = source.get('table_name')
+                source_col = source.get('name')
+                target_table = target.get('table_name')
+                target_col = target.get('name')
+                confidence = r.get('confidence', 0)
+                
+                if source_table and source_col and target_table and target_col:
+                    relationship_info.append(
+                        f"{source_table}.{source_col} → {target_table}.{target_col} (confidence: {confidence:.2f})"
+                    )
+        
+        # Create prompt
+        table_names = [table.get("name") for table in tables if table.get("name")]
+        prompt = f"""
+        Generate 5 useful sample SQL queries for the following database schema:
+        
+        Tables: {", ".join(table_names)}
+        
+        Key relationships:
+        {chr(10).join(relationship_info[:10])}
+        
+        For each query:
+        1. Start with a clear comment explaining what business question the query answers
+        2. Include joins between tables where appropriate
+        3. Demonstrate filtering, aggregation, and sorting
+        4. Make the queries progressively more complex to showcase different SQL features
+        5. Include examples of common business analyses
+        
+        Format as SQL only, with comments explaining each query.
+        """
+        
+        # Generate sample queries
+        sample_queries = await self.llm_client.generate(prompt)
+        
+        # Store sample queries in Neo4j
+        if hasattr(self.neo4j_client, 'store_sample_queries'):
+            self.neo4j_client.store_sample_queries(
+                tenant_id=tenant_id,
+                queries=sample_queries,
+                metadata={
+                    "generated_at": datetime.now().isoformat(),
+                    "table_count": len(tables),
+                    "schema_version": datetime.now().strftime("%Y%m%d")
+                }
+            )
+        else:
+            logger.warning("Neo4jClient doesn't have store_sample_queries method")
+            
+        logger.info(f"Generated sample queries for tenant {tenant_id}")
     
     def _build_description_enhancement_prompt(
         self, table_name: str, columns: List[Dict[str, Any]], original_description: str
@@ -119,94 +625,123 @@ class SchemaEnhancementWorkflow:
         2. Its business purpose in the organization
         3. How it might relate to other tables (based on the column names)
         4. Typical use cases for this data
+        5. The entity lifecycle represented by this table
         
-        Keep the description business-focused and around 2-3 sentences long.
+        Keep the description business-focused, detailed yet concise (3-5 sentences long).
+        Focus on explaining the business purpose rather than just listing the columns.
         """
     
-    async def _identify_business_domain(self, tenant_id: str, dataset_id: str, tables: List[Dict[str, Any]]):
-        """Identify business domain for the entire dataset"""
-        # Create context about tables and columns
-        table_info = []
-        for table in tables:
-            table_name = table.get("name")
-            if not table_name:
-                continue
-                
-            description = table.get("description", "No description")
-            columns = self.neo4j_client.get_columns_for_table(tenant_id, table_name)
-            column_names = [col.get("name") or col.get("column_name") for col in columns if col.get("name") or col.get("column_name")]
-            
-            table_info.append(f"- Table: {table_name}\n  Description: {description}\n  Columns: {', '.join(column_names)}")
+    def _build_column_enhancement_prompt(
+        self, table_name: str, columns_to_enhance: List[Dict[str, Any]], all_columns: List[Dict[str, Any]]
+    ) -> str:
+        """Build prompt for column description enhancement"""
+        # Format the columns that need enhancement
+        columns_to_enhance_text = "\n".join([
+            f"- {col.get('name') or col.get('column_name')}: {col.get('data_type')} - {col.get('description', 'No description')}"
+            for col in columns_to_enhance if col.get('name') or col.get('column_name')
+        ])
         
-        # Create prompt
-        prompt = f"""
-        Analyze the following database schema and determine the business domain it represents:
+        # Provide context of all columns in the table
+        all_columns_text = "\n".join([
+            f"- {col.get('name') or col.get('column_name')}: {col.get('data_type')}"
+            for col in all_columns if col.get('name') or col.get('column_name')
+        ])
         
-        {"\n".join(table_info)}
+        return f"""
+        I need detailed descriptions for these columns in the table '{table_name}'.
         
-        Please provide:
-        1. The primary business domain (e.g., retail, healthcare, finance, etc.)
-        2. Key business entities represented in this data
-        3. Potential business questions this data could answer
+        Columns needing descriptions:
+        {columns_to_enhance_text}
         
-        Format your response as a concise domain analysis.
+        All columns in this table (for context):
+        {all_columns_text}
+        
+        For each column that needs a description, provide:
+        1. A clear description of what the column represents
+        2. Its business purpose and how it's used
+        3. Any data constraints or rules that might apply
+        4. Potential relationships or joins to other tables
+        
+        Respond with structured data for each column, focusing on business meaning rather than technical details.
         """
-        
-        # Generate domain analysis
-        domain_analysis = await self.llm_client.generate(prompt)
-        
-        # Store domain analysis in Neo4j
-        # This would require adding a method to Neo4jClient to store dataset metadata
-        logger.info(f"Generated business domain analysis for dataset {dataset_id}")
     
-    async def _generate_sample_queries(self, tenant_id: str, tables: List[Dict[str, Any]]):
-        """Generate sample SQL queries based on the schema"""
-        if len(tables) < 2:
-            logger.info("Not enough tables to generate meaningful sample queries")
-            return
-            
-        # Get relationships for context
-        all_relationships = []
-        for table in tables:
-            table_name = table.get("name")
-            if not table_name:
-                continue
-                
-            relationships = self.neo4j_client.get_relationships_for_table(tenant_id, table_name)
-            all_relationships.extend(relationships)
+    def _build_semantic_relationship_prompt(
+        self, table1_name: str, table1_columns: List[Dict[str, Any]],
+        table2_name: str, table2_columns: List[Dict[str, Any]]
+    ) -> str:
+        """Build prompt for semantic relationship analysis"""
+        # Format table 1 columns
+        table1_columns_text = "\n".join([
+            f"- {col.get('name') or col.get('column_name')}: {col.get('data_type')} - {col.get('description', 'No description')}"
+            for col in table1_columns if col.get('name') or col.get('column_name')
+        ])
         
-        # Create prompt
-        table_names = [table.get("name") for table in tables if table.get("name")]
-        prompt = f"""
-        Generate 3 useful sample SQL queries for the following database schema:
+        # Format table 2 columns
+        table2_columns_text = "\n".join([
+            f"- {col.get('name') or col.get('column_name')}: {col.get('data_type')} - {col.get('description', 'No description')}"
+            for col in table2_columns if col.get('name') or col.get('column_name')
+        ])
         
-        Tables: {", ".join(table_names)}
+        return f"""
+        Analyze these two database tables and identify potential semantic relationships between them:
         
-        For each query:
-        1. Start with a clear comment explaining what business question the query answers
-        2. Include joins between tables where appropriate
-        3. Demonstrate filtering, aggregation, and sorting
-        4. Make the queries realistic for business users
+        TABLE 1: {table1_name}
+        Columns:
+        {table1_columns_text}
         
-        Format as SQL only, with comments explaining each query.
+        TABLE 2: {table2_name}
+        Columns:
+        {table2_columns_text}
+        
+        Identify potential foreign key relationships between these tables based on:
+        1. Column names and patterns
+        2. Data types
+        3. Semantic relationships implied by descriptions
+        4. Business domain knowledge
+        
+        For each potential relationship, specify:
+        - Source table and column
+        - Target table and column
+        - Relationship type (one-to-many, many-to-many, etc.)
+        - Confidence level (0.0-1.0)
+        - A short explanation for the relationship
+
+        Only include relationships that make business sense with a confidence of at least 0.6.
+        Focus on semantic relationships rather than just naming patterns.
         """
-        
-        # Generate sample queries
-        sample_queries = await self.llm_client.generate(prompt)
-        
-        # Store sample queries in Neo4j
-        # This would require adding a method to Neo4jClient to store sample queries
-        logger.info(f"Generated sample queries for tenant {tenant_id}")
     
     def _record_workflow_completion(self, tenant_id: str, dataset_id: str):
         """Record successful workflow completion"""
         logger.info(f"Enhancement completed for {tenant_id}/{dataset_id}")
-        # In a real implementation, this would store a record in Neo4j or another storage
+        
+        if hasattr(self.neo4j_client, 'record_workflow_status'):
+            self.neo4j_client.record_workflow_status(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                workflow_name="schema_enhancement",
+                status="completed",
+                metadata={
+                    "completed_at": datetime.now().isoformat(),
+                    "version": "1.0"
+                }
+            )
     
     def _record_workflow_failure(self, tenant_id: str, dataset_id: str, error: str):
         """Record workflow failure"""
         logger.error(f"Enhancement failed for {tenant_id}/{dataset_id}: {error}")
-        # In a real implementation, this would store a record in Neo4j or another storage
+        
+        if hasattr(self.neo4j_client, 'record_workflow_status'):
+            self.neo4j_client.record_workflow_status(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                workflow_name="schema_enhancement",
+                status="failed",
+                metadata={
+                    "error": error,
+                    "failed_at": datetime.now().isoformat(),
+                    "version": "1.0"
+                }
+            )
 
 
 async def run_enhancement(tenant_id: str, dataset_id: str = None):
