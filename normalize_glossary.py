@@ -70,24 +70,24 @@ def normalize_glossary(tenant_id):
         
         logger.info(f"Parsed {len(terms)} terms and {len(metrics)} metrics")
         
-        # Create the new normalized structure
-        logger.info("Creating normalized business glossary structure...")
+        # Create the business glossary structure
+        logger.info("Creating business glossary structure...")
         
-        # First, clear existing normalized glossary if any
+        # First, clear existing business glossary structure if any
         clear_query = """
-        MATCH (g:NormalizedGlossary {tenant_id: $tenant_id})
+        MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
         OPTIONAL MATCH (g)-[:HAS_TERM]->(t:GlossaryTerm)
         OPTIONAL MATCH (g)-[:HAS_METRIC]->(m:BusinessMetric)
         DETACH DELETE t, m, g
         """
         
         neo4j_client._execute_query(clear_query, {"tenant_id": tenant_id})
-        logger.info("Cleared any existing normalized glossary")
+        logger.info("Cleared any existing business glossary structure")
         
         # Create root glossary node
         root_query = """
         MATCH (d:Dataset {tenant_id: $tenant_id, name: $dataset_id})
-        CREATE (g:NormalizedGlossary {
+        CREATE (g:BusinessGlossary {
             tenant_id: $tenant_id,
             dataset_id: $dataset_id,
             created_at: datetime()
@@ -101,12 +101,12 @@ def normalize_glossary(tenant_id):
             "dataset_id": dataset_id
         })
         
-        logger.info("Created normalized glossary root node")
+        logger.info("Created business glossary root node")
         
         # Create term nodes
         for term in terms:
             term_query = """
-            MATCH (g:NormalizedGlossary {tenant_id: $tenant_id})
+            MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
             
             // Create term node
             CREATE (t:GlossaryTerm {
@@ -151,7 +151,7 @@ def normalize_glossary(tenant_id):
         # Create metric nodes
         for metric in metrics:
             metric_query = """
-            MATCH (g:NormalizedGlossary {tenant_id: $tenant_id})
+            MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
             
             // Create metric node
             CREATE (m:BusinessMetric {
@@ -187,7 +187,7 @@ def normalize_glossary(tenant_id):
         # Close Neo4j client
         neo4j_client.close()
         
-        logger.info("Normalized business glossary created successfully")
+        logger.info("Business glossary structure created successfully")
         return True
         
     except Exception as e:
@@ -334,13 +334,13 @@ def create_term_relationships(neo4j_client, tenant_id, terms):
     logger.info("Created term relationships")
 
 def show_example_queries():
-    """Print example Cypher queries for the normalized glossary."""
-    print("\nExample Cypher Queries for Normalized Glossary:")
+    """Print example Cypher queries for the business glossary."""
+    print("\nExample Cypher Queries for Business Glossary:")
     print("-" * 50)
     
     print("\n// Get all terms in the glossary")
     print("""
-    MATCH (g:NormalizedGlossary)-[:HAS_TERM]->(t:GlossaryTerm)
+    MATCH (g:BusinessGlossary)-[:HAS_TERM]->(t:GlossaryTerm)
     RETURN t.name, t.definition
     """)
     

@@ -312,16 +312,12 @@ class DirectEnhancementWorkflow:
             ]
         })
         
-        # Create normalized glossary structure in Neo4j
-        logger.info("Creating normalized business glossary structure...")
+        # Create business glossary structure in Neo4j
+        logger.info("Creating business glossary structure...")
         
-        # Clear any existing normalized glossary
+        # Clear any existing business glossary structure
         clear_query = """
         MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
-        DETACH DELETE g
-        
-        WITH 1 as dummy
-        MATCH (g:NormalizedGlossary {tenant_id: $tenant_id})
         OPTIONAL MATCH (g)-[:HAS_TERM]->(t:GlossaryTerm)
         OPTIONAL MATCH (g)-[:HAS_METRIC]->(m:BusinessMetric)
         DETACH DELETE t, m, g
@@ -332,7 +328,7 @@ class DirectEnhancementWorkflow:
         # Create root glossary node
         root_query = """
         MATCH (d:Dataset {tenant_id: $tenant_id, name: $dataset_id})
-        CREATE (g:NormalizedGlossary {
+        CREATE (g:BusinessGlossary {
             tenant_id: $tenant_id,
             dataset_id: $dataset_id,
             created_at: datetime()
@@ -350,7 +346,7 @@ class DirectEnhancementWorkflow:
         business_terms = response.get("business_terms", [])
         for term in business_terms:
             term_query = """
-            MATCH (g:NormalizedGlossary {tenant_id: $tenant_id})
+            MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
             
             // Create term node
             CREATE (t:GlossaryTerm {
@@ -399,7 +395,7 @@ class DirectEnhancementWorkflow:
         business_metrics = response.get("business_metrics", [])
         for metric in business_metrics:
             metric_query = """
-            MATCH (g:NormalizedGlossary {tenant_id: $tenant_id})
+            MATCH (g:BusinessGlossary {tenant_id: $tenant_id})
             
             // Create metric node
             CREATE (m:BusinessMetric {
@@ -432,7 +428,7 @@ class DirectEnhancementWorkflow:
         # Create term relationships
         self._create_term_relationships(tenant_id, business_terms)
         
-        logger.info(f"Generated normalized business glossary for dataset {dataset_id}")
+        logger.info(f"Generated business glossary for dataset {dataset_id}")
     
     def _create_term_relationships(self, tenant_id: str, terms: List[Dict[str, Any]]):
         """Create relationships between term nodes."""
