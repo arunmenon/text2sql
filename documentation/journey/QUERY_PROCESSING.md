@@ -428,6 +428,10 @@ Let's examine how GraphAlchemy processes complex queries with composite business
 
 ### Stage 2: Entity Resolution (Semantic Graph Lookup)
 
+**Note: Composite concepts are actually handled at runtime through code in query_resolution.py, specifically the `_detect_composite_concepts()` and `_resolve_composite_concept()` methods. The system dynamically combines GlossaryTerm nodes rather than using persistent CompositeConcept nodes.**
+
+Below is the internal representation the system would create during this processing:
+
 ```json
 {
   "resolved_entities": {
@@ -435,15 +439,14 @@ Let's examine how GraphAlchemy processes complex queries with composite business
       {
         "source_text": "at-risk accounts",
         "resolved_to": {
-          "type": "runtime_composite_concept", // Note: This is handled at runtime, not as a persistent node
+          "type": "business_concept",
           "name": "at_risk_accounts",
           "definition": "accounts that have high value but show warning signs",
           "attributes": [
             {"name": "high_value", "definition": "accounts.annual_value > 50000"},
             {"name": "warning_signs", "definition": "one or more of: payment_delays, support_escalations, negative_feedback"}
           ],
-          "confidence": 0.93,
-          "resolution_method": "runtime_composite_detection" // Added to clarify this is runtime detection
+          "confidence": 0.93
         }
       }
     ],
