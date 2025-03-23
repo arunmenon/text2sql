@@ -210,17 +210,19 @@ flowchart TD
    - Extracts join conditions from paths
    - Formats into structured data for SQL generation
 
-## Notable Differences from Documentation
+## Runtime Composite Concept Handling
 
-1. **Composite Concepts**:
-   - Documentation in USER_FLOW.md and QUERY_PROCESSING.md mentions `CompositeConcept` as if they are persistent nodes
-   - **Actual implementation**: Composite concepts are handled entirely at runtime in `query_resolution.py`
-   - No persistent `CompositeConcept` nodes exist in the graph
+The system handles composite business concepts entirely at runtime:
 
-2. **Concept Harvesting**:
-   - Some documentation suggests automated harvesting of composite concepts
-   - **Actual implementation**: No concept harvesting is implemented
-   - Composite concepts are detected and resolved dynamically using existing `GlossaryTerm` nodes
+1. **Detection Phase**:
+   - `_detect_composite_concepts()` identifies multi-word concepts from NL queries
+   - Combines individual terms for complex concept detection
+   - No persistent storage of detected concepts
+
+2. **Resolution Phase**:
+   - `_resolve_composite_concept()` interprets detected complex concepts
+   - Uses existing GlossaryTerm nodes and their definitions
+   - Dynamically generates SQL implementations for these concepts
 
 ## Not Yet Implemented
 
