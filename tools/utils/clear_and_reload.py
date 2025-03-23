@@ -1,0 +1,1 @@
+../../scripts/database/clear_and_reload.py

@@ -1,0 +1,1 @@
+../../scripts/glossary/normalize_glossary.py

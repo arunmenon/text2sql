@@ -1,0 +1,1 @@
+../../scripts/schema/load_schema_demo.py

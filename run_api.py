@@ -1,17 +1,18 @@
+#!/usr/bin/env python3
 """
 Run the Text2SQL API server.
+
+This is a compatibility wrapper that forwards execution to the new API location.
 """
 import os
-import uvicorn
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# Host and port
-host = os.getenv("API_HOST", "127.0.0.1")
-port = int(os.getenv("API_PORT", "8000"))
+import sys
 
 if __name__ == "__main__":
-    print(f"Starting Text2SQL API on http://{host}:{port}")
-    uvicorn.run("src.api.main:app", host=host, port=port, reload=True)
+    # Add executable permission to the actual API script if needed
+    os.chmod("scripts/api/run_api.py", 0o755)
+    
+    # Forward all arguments to the actual API script
+    exit_code = os.system(f"python3 scripts/api/run_api.py")
+    
+    # Exit with the same exit code
+    sys.exit(exit_code >> 8)  # Extract the actual exit code from the system call

@@ -1,0 +1,1 @@
+../../scripts/glossary/generate_glossary.py
