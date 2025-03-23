@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from typing import Dict, Any, Optional, List, Tuple
 
 from src.llm.client import LLMClient
@@ -138,7 +139,7 @@ class QueryResolutionComponent:
     
     async def _resolve_entities(self, entity_mentions: List[str], schema_context: Dict[str, Any]) -> Dict[str, ResolvedEntity]:
         """
-        Map entity mentions to actual tables.
+        Map entity mentions to actual tables with weighted term mapping.
         
         Args:
             entity_mentions: List of entity mentions from NL query
@@ -166,73 +167,108 @@ class QueryResolutionComponent:
                         schema_context["tenant_id"], term_name
                     )
                     if term_details and "mapped_tables" in term_details and term_details["mapped_tables"]:
-                        glossary_term_mappings[term_name.lower()] = term_details["mapped_tables"]
+                        glossary_term_mappings[term_name.lower()] = {
+                            "tables": term_details["mapped_tables"],
+                            "usage_count": term_details.get("usage_count", 0),
+                            "weight": term_details.get("weight", 1.0)
+                        }
                 except Exception as e:
                     logger.warning(f"Error getting term details for {term_name}: {e}")
         
         for entity in entity_mentions:
+            entity_lower = entity.lower()
+            potential_matches = []
+            
             # Step 1: Direct match
             if entity in schema_context["tables"]:
-                resolved[entity] = ResolvedEntity(
-                    table_name=entity,
-                    confidence=1.0,
-                    resolution_method="direct_match"
-                )
-                continue
+                potential_matches.append({
+                    "table_name": entity,
+                    "confidence": 1.0,
+                    "resolution_method": "direct_match",
+                    "weight": self._calculate_term_weight(1.0, usage_count=10, term_similarity=1.0)  # Direct matches get highest weight
+                })
             
             # Step 2: Try lowercase matching
-            entity_lower = entity.lower()
             for table_name in available_tables:
                 if table_name.lower() == entity_lower:
-                    resolved[entity] = ResolvedEntity(
-                        table_name=table_name,
-                        confidence=0.9,
-                        resolution_method="case_insensitive_match"
-                    )
-                    break
+                    potential_matches.append({
+                        "table_name": table_name,
+                        "confidence": 0.9,
+                        "resolution_method": "case_insensitive_match",
+                        "weight": self._calculate_term_weight(0.9, usage_count=8, term_similarity=0.95)
+                    })
             
             # Step 3: Check if entity matches a glossary term with table mappings
-            if entity not in resolved and entity_lower in glossary_term_mappings:
-                mapped_tables = glossary_term_mappings[entity_lower]
+            if entity_lower in glossary_term_mappings:
+                mapping_info = glossary_term_mappings[entity_lower]
+                mapped_tables = mapping_info["tables"]
+                usage_count = mapping_info.get("usage_count", 0)
+                term_weight = mapping_info.get("weight", 1.0)
+                
                 if mapped_tables and len(mapped_tables) > 0:
-                    # Use the first mapped table with high confidence
-                    resolved[entity] = ResolvedEntity(
-                        table_name=mapped_tables[0],
-                        confidence=0.85,
-                        resolution_method="glossary_term_mapping"
-                    )
-                    continue
+                    # Add all mapped tables as potential matches with weights
+                    for table_name in mapped_tables:
+                        potential_matches.append({
+                            "table_name": table_name,
+                            "confidence": 0.85,
+                            "resolution_method": "glossary_term_mapping",
+                            "weight": self._calculate_term_weight(0.85, usage_count, term_similarity=0.9, term_weight=term_weight)
+                        })
             
             # Step 4: Try to fuzzy match with glossary terms
-            if entity not in resolved and "glossary_terms" in schema_context:
-                # Check if entity matches any term name approximately
+            if "glossary_terms" in schema_context:
                 for term in schema_context["glossary_terms"]:
                     term_name = term.get("name", "")
                     if not term_name:
                         continue
-                        
-                    # Check for partial matches
-                    if entity_lower in term_name.lower() or term_name.lower() in entity_lower:
-                        # Check if term has mappings
+                    
+                    term_lower = term_name.lower()
+                    term_similarity = self._calculate_text_similarity(entity_lower, term_lower)
+                    
+                    # Check for partial matches with similarity threshold
+                    if term_similarity >= 0.5:
                         try:
                             term_details = self.neo4j_client.get_glossary_term_details(
                                 schema_context["tenant_id"], term_name
                             )
+                            
                             if term_details and "mapped_tables" in term_details and term_details["mapped_tables"]:
                                 mapped_tables = term_details["mapped_tables"]
+                                usage_count = term_details.get("usage_count", 0)
+                                term_weight = term_details.get("weight", 1.0)
+                                
                                 if mapped_tables and len(mapped_tables) > 0:
-                                    # Use the first mapped table
-                                    resolved[entity] = ResolvedEntity(
-                                        table_name=mapped_tables[0],
-                                        confidence=0.75,
-                                        resolution_method="fuzzy_glossary_match"
-                                    )
-                                    break
+                                    # Add all mapped tables as potential matches with weights
+                                    for table_name in mapped_tables:
+                                        potential_matches.append({
+                                            "table_name": table_name,
+                                            "confidence": 0.75,
+                                            "resolution_method": "fuzzy_glossary_match",
+                                            "weight": self._calculate_term_weight(0.75, usage_count, term_similarity, term_weight)
+                                        })
                         except Exception as e:
                             logger.warning(f"Error getting term details for fuzzy match {term_name}: {e}")
             
-            # Step 5: If still not resolved, try fuzzy matching using LLM with enhanced context
-            if entity not in resolved:
+            # Step 5: If we have potential matches, select the one with highest weight
+            if potential_matches:
+                # Sort by weight in descending order
+                potential_matches.sort(key=lambda x: x["weight"], reverse=True)
+                best_match = potential_matches[0]
+                
+                # Track usage for this term mapping
+                try:
+                    if best_match["resolution_method"] in ["glossary_term_mapping", "fuzzy_glossary_match"]:
+                        self._update_term_mapping_usage(schema_context["tenant_id"], entity, best_match["table_name"])
+                except Exception as e:
+                    logger.warning(f"Error updating term mapping usage: {e}")
+                
+                resolved[entity] = ResolvedEntity(
+                    table_name=best_match["table_name"],
+                    confidence=best_match["confidence"],
+                    resolution_method=best_match["resolution_method"]
+                )
+            else:
+                # Step 6: If still not resolved, try fuzzy matching using LLM with enhanced context
                 match_prompt = self._build_entity_matching_prompt(entity, schema_context)
                 match_schema = {
                     "type": "object",
@@ -253,6 +289,97 @@ class QueryResolutionComponent:
                     )
                 
         return resolved
+        
+    def _calculate_term_weight(self, confidence: float, usage_count: int = 0, term_similarity: float = 1.0, term_weight: float = 1.0) -> float:
+        """
+        Calculate the weight for a term mapping based on multiple factors.
+        
+        Args:
+            confidence: Base confidence of the match (0.0-1.0)
+            usage_count: How many times this mapping has been used successfully
+            term_similarity: Text similarity between query term and glossary term (0.0-1.0)
+            term_weight: Explicit weight assigned to the term
+            
+        Returns:
+            Calculated weight value
+        """
+        # Base weight is the confidence
+        weight = confidence
+        
+        # Apply usage bonus (logarithmic to prevent excessive dominance of frequent terms)
+        # A term used 10 times would get a +0.3 bonus, 100 times +0.6, etc.
+        if usage_count > 0:
+            usage_bonus = min(0.3 * (1 + math.log10(usage_count)), 0.6)
+            weight += usage_bonus
+        
+        # Apply similarity factor (more similar = higher weight)
+        weight *= term_similarity
+        
+        # Apply explicit term weight (allowing business users to influence resolution)
+        weight *= term_weight
+        
+        return weight
+    
+    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate text similarity between two strings.
+        
+        Args:
+            text1: First text string
+            text2: Second text string
+            
+        Returns:
+            Similarity score (0.0-1.0)
+        """
+        # Simple implementation - could be enhanced with more sophisticated NLP
+        # Check for exact match
+        if text1 == text2:
+            return 1.0
+            
+        # Check for containment
+        if text1 in text2:
+            return 0.9
+        if text2 in text1:
+            return 0.8
+            
+        # Check for word-level similarity
+        words1 = set(text1.split())
+        words2 = set(text2.split())
+        
+        # Jaccard similarity
+        if words1 or words2:  # Prevent division by zero
+            intersection = len(words1.intersection(words2))
+            union = len(words1.union(words2))
+            return intersection / union
+        
+        return 0.0
+    
+    def _update_term_mapping_usage(self, tenant_id: str, term: str, table_name: str) -> None:
+        """
+        Update usage statistics for term mapping to improve future weighting.
+        
+        Args:
+            tenant_id: Tenant ID
+            term: Business term used
+            table_name: Table name it was mapped to
+        """
+        try:
+            # First try to find an exact match in glossary terms
+            terms = self.neo4j_client.search_glossary_terms(tenant_id, term)
+            
+            if terms:
+                # If we found the term, update its mapping usage
+                term_name = terms[0].get("name")
+                if term_name:
+                    # Update mapping usage in Neo4j
+                    self.neo4j_client.update_term_mapping_usage(tenant_id, term_name, table_name)
+                    logger.info(f"Updated usage count for term '{term_name}' mapping to table '{table_name}'")
+            else:
+                # Term not in glossary yet, could add it automatically in the future
+                # For now, just log that we would add it
+                logger.info(f"Term '{term}' was used to refer to table '{table_name}' but is not in glossary")
+        except Exception as e:
+            logger.warning(f"Error updating term mapping usage: {e}")
     
     def _build_entity_matching_prompt(self, entity: str, schema_context: Dict[str, Any]) -> str:
         """Build prompt for entity matching"""
@@ -506,22 +633,46 @@ class QueryResolutionComponent:
         self, identified_ambiguities: List[str],
         schema_context: Dict[str, Any]
     ) -> Dict[str, ResolvedConcept]:
-        """Resolve semantic concepts to database constructs"""
+        """Resolve semantic concepts to database constructs with composite concept detection"""
         resolved = {}
+        
+        # Step 1: Analyze ambiguities for composite concepts
+        composite_concepts = self._detect_composite_concepts(identified_ambiguities)
+        
+        # Process both single and composite concepts
+        all_concepts = identified_ambiguities + composite_concepts
         
         # Try to match concepts with business glossary terms first
         if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
-            for concept in identified_ambiguities:
+            for concept in all_concepts:
                 concept_lower = concept.lower()
+                matched_terms = []
                 
-                # Check for exact matches with glossary terms
+                # Step 2: Check for multiple term matches within a single concept
+                # This is crucial for composite concepts like "active customers"
                 for term in schema_context["glossary_terms"]:
                     term_name = term.get("name", "")
                     if not term_name:
                         continue
+                    
+                    term_lower = term_name.lower()
+                    # Check if this term is part of our concept
+                    if (term_lower == concept_lower or 
+                        term_lower in concept_lower or 
+                        self._calculate_text_similarity(term_lower, concept_lower) > 0.6):
+                        matched_terms.append(term)
+                
+                if matched_terms:
+                    # For composite concepts with multiple term matches
+                    if len(matched_terms) > 1:
+                        resolved[concept] = await self._resolve_composite_concept(
+                            concept, matched_terms, schema_context
+                        )
+                    else:
+                        # Single term match - process as before
+                        term = matched_terms[0]
+                        term_name = term.get("name", "")
                         
-                    # If we have an exact or close match
-                    if term_name.lower() == concept_lower or term_name.lower() in concept_lower or concept_lower in term_name.lower():
                         try:
                             # Get term details with mappings
                             term_details = self.neo4j_client.get_glossary_term_details(
@@ -556,15 +707,19 @@ class QueryResolutionComponent:
                                     implementation=implementation,
                                     confidence=0.9
                                 )
-                                break
                         except Exception as e:
                             logger.warning(f"Error resolving concept with glossary term {term_name}: {e}")
         
         # For any unresolved concepts, use LLM
-        unresolved_concepts = [c for c in identified_ambiguities if c not in resolved]
+        unresolved_concepts = [c for c in all_concepts if c not in resolved]
         
         for concept in unresolved_concepts:
-            resolution_prompt = self._build_concept_resolution_prompt(concept, schema_context)
+            # Use a different prompt for composite concepts
+            if concept in composite_concepts:
+                resolution_prompt = self._build_composite_concept_resolution_prompt(concept, schema_context)
+            else:
+                resolution_prompt = self._build_concept_resolution_prompt(concept, schema_context)
+                
             resolution_schema = {
                 "type": "object",
                 "properties": {
@@ -609,6 +764,263 @@ class QueryResolutionComponent:
                 )
                 
         return resolved
+        
+    def _detect_composite_concepts(self, identified_ambiguities: List[str]) -> List[str]:
+        """
+        Detect composite concepts from individual ambiguities.
+        
+        Args:
+            identified_ambiguities: List of identified ambiguous terms
+            
+        Returns:
+            List of detected composite concepts
+        """
+        composite_concepts = []
+        
+        # Look for multi-word concepts
+        for concept in identified_ambiguities:
+            words = concept.split()
+            if len(words) > 1:
+                # This is already a multi-word concept
+                continue
+                
+            # Look for pairs of concepts that might form composites
+            for other_concept in identified_ambiguities:
+                if concept == other_concept:
+                    continue
+                    
+                # Create possible composite (e.g., "active" + "customers" = "active customers")
+                composite = f"{concept} {other_concept}"
+                composite_concepts.append(composite)
+                
+                # Also try reverse order
+                composite_reverse = f"{other_concept} {concept}"
+                composite_concepts.append(composite_reverse)
+        
+        return composite_concepts
+        
+    async def _resolve_composite_concept(
+        self, concept: str, matched_terms: List[Dict[str, Any]], schema_context: Dict[str, Any]
+    ) -> ResolvedConcept:
+        """
+        Resolve a composite concept made up of multiple business terms.
+        
+        Args:
+            concept: The composite concept
+            matched_terms: List of matched glossary terms
+            schema_context: Schema context
+            
+        Returns:
+            Resolved concept
+        """
+        # Get term details for all matched terms
+        term_details_list = []
+        for term in matched_terms:
+            term_name = term.get("name", "")
+            if not term_name:
+                continue
+                
+            try:
+                term_details = self.neo4j_client.get_glossary_term_details(
+                    schema_context["tenant_id"], term_name
+                )
+                if term_details:
+                    term_details_list.append(term_details)
+            except Exception as e:
+                logger.warning(f"Error getting details for term in composite concept: {term_name}, {e}")
+        
+        # If we couldn't get details for any terms, use LLM
+        if not term_details_list:
+            prompt = self._build_composite_concept_resolution_prompt(concept, schema_context)
+            resolution_schema = {
+                "type": "object",
+                "properties": {
+                    "interpretation": {"type": "string"},
+                    "implementation": {"type": "object"},
+                    "confidence": {"type": "number"}
+                }
+            }
+            
+            resolution_result = await self.llm_client.generate_structured(prompt, resolution_schema)
+            
+            if resolution_result and "interpretation" in resolution_result:
+                return ResolvedConcept(
+                    concept=concept,
+                    interpretation=resolution_result["interpretation"],
+                    implementation=resolution_result.get("implementation", {}),
+                    confidence=resolution_result.get("confidence", 0.7)
+                )
+        
+        # Analyze term mappings to generate appropriate SQL for the composite
+        tables_involved = set()
+        all_columns = []
+        
+        for term_details in term_details_list:
+            # Collect tables and columns
+            if "mapped_tables" in term_details:
+                for table in term_details.get("mapped_tables", []):
+                    tables_involved.add(table)
+                    
+            if "mapped_columns" in term_details:
+                for col in term_details.get("mapped_columns", []):
+                    if "table" in col and "column" in col:
+                        all_columns.append(f"{col['table']}.{col['column']}")
+        
+        # Generate a SQL fragment based on the composite terms
+        sql_fragment = ""
+        
+        # Combine definitions for interpretation
+        interpretation = "Composite business concept: "
+        interpretation += " and ".join([
+            term_details.get("definition", term_details.get("name", "Unknown term"))
+            for term_details in term_details_list
+        ])
+        
+        # Determine SQL fragment type based on composite analysis
+        # Example: "active customers" -> WHERE customers.status = 'active'
+        concept_words = concept.lower().split()
+        
+        # Check for modifiers that suggest filtering conditions
+        modifiers = ["active", "new", "premium", "deleted", "archived", "top", "recent", "high", "low"]
+        
+        if any(mod in concept_words for mod in modifiers):
+            # This is likely a filtering composite
+            impl_type = "filter"
+            
+            # Simple logic to generate filter condition
+            if tables_involved and "active" in concept_words:
+                table = next(iter(tables_involved))  # Get first table
+                sql_fragment = f"SELECT * FROM {table} WHERE status = 'active'"
+            elif tables_involved:
+                # Generic filter
+                modifier = next((mod for mod in modifiers if mod in concept_words), "")
+                table = next(iter(tables_involved))
+                sql_fragment = f"SELECT * FROM {table} WHERE {modifier} = true"
+        else:
+            # Default to a selection composite
+            impl_type = "selection"
+            
+            if all_columns:
+                tables = ", ".join(tables_involved)
+                columns = ", ".join(all_columns)
+                sql_fragment = f"SELECT {columns} FROM {tables}"
+            elif tables_involved:
+                table = next(iter(tables_involved))
+                sql_fragment = f"SELECT * FROM {table}"
+        
+        # Create implementation
+        implementation = {
+            "type": impl_type,
+            "sql_fragment": sql_fragment,
+            "tables_involved": list(tables_involved),
+            "columns_involved": all_columns
+        }
+        
+        return ResolvedConcept(
+            concept=concept,
+            interpretation=interpretation,
+            implementation=implementation,
+            confidence=0.85
+        )
+        
+    def _build_composite_concept_resolution_prompt(self, concept: str, schema_context: Dict[str, Any]) -> str:
+        """
+        Build prompt for resolving composite business concepts.
+        
+        Args:
+            concept: The composite concept
+            schema_context: Schema context
+            
+        Returns:
+            Generated prompt
+        """
+        # Format tables info
+        tables_info = []
+        for table_name, table_info in schema_context["tables"].items():
+            description = table_info.get("description", "No description")
+            columns = table_info.get("columns", [])
+            
+            columns_text = ", ".join([
+                f"{c.get('name') or c.get('column_name', 'Unknown')} ({c.get('data_type', 'Unknown')})"
+                for c in columns if c.get("name") or c.get("column_name")
+            ])
+            
+            tables_info.append(f"- {table_name}: {description}\n  Columns: {columns_text}")
+        
+        tables_text = "\n".join(tables_info)
+        
+        # Find relevant glossary terms
+        glossary_info = ""
+        if "glossary_terms" in schema_context and schema_context["glossary_terms"]:
+            concept_words = concept.lower().split()
+            relevant_terms = []
+            
+            for term in schema_context["glossary_terms"]:
+                term_name = term.get("name", "")
+                if not term_name:
+                    continue
+                    
+                term_lower = term_name.lower()
+                term_definition = term.get("definition", "")
+                
+                # Check if term is relevant to the composite concept
+                if any(word in term_lower for word in concept_words) or term_lower in concept.lower():
+                    try:
+                        term_details = self.neo4j_client.get_glossary_term_details(
+                            schema_context["tenant_id"], term_name
+                        )
+                        
+                        if term_details:
+                            # Format mappings information
+                            tables_mapped = term_details.get("mapped_tables", [])
+                            columns_mapped = term_details.get("mapped_columns", [])
+                            
+                            mappings_info = ""
+                            if tables_mapped:
+                                mappings_info += f"\n    Tables: {', '.join(tables_mapped)}"
+                            
+                            if columns_mapped:
+                                formatted_cols = [f"{col['table']}.{col['column']}" for col in columns_mapped if "table" in col and "column" in col]
+                                if formatted_cols:
+                                    mappings_info += f"\n    Columns: {', '.join(formatted_cols)}"
+                            
+                            if mappings_info:
+                                relevant_terms.append(f"- {term_name}: {term_definition[:150]}...{mappings_info}")
+                            else:
+                                relevant_terms.append(f"- {term_name}: {term_definition[:200]}...")
+                    except Exception:
+                        # Fall back to basic term information
+                        relevant_terms.append(f"- {term_name}: {term_definition[:200]}...")
+            
+            if relevant_terms:
+                glossary_info = "Relevant business glossary terms:\n" + "\n".join(relevant_terms)
+        
+        return f"""
+        I'm trying to interpret the composite business concept "{concept}" in a database query.
+        This appears to combine multiple business terms or concepts that need to be translated into SQL.
+        
+        Database schema:
+        {tables_text}
+        
+        {glossary_info}
+        
+        Please analyze this composite concept and determine how it should be implemented in SQL.
+        Consider:
+        1. This is a multi-term concept that may combine multiple business terms
+        2. It may map to multiple tables and/or columns
+        3. It might represent a filter condition (e.g., "active customers" -> WHERE status='active')
+        4. It could represent a join between multiple entities (e.g., "customer orders" -> JOIN)
+        5. It might be a derived metric or calculation
+        
+        Return a JSON object with:
+        - interpretation: A clear interpretation of this composite concept
+        - implementation: Details on how to implement this in SQL, including:
+          - type: Implementation type (filter, join, derived_metric, etc.)
+          - sql_fragment: Example SQL fragment that implements this concept
+          - tables_involved: List of tables involved
+          - columns_involved: List of columns involved
+        - confidence: Your confidence in this interpretation from 0.0 to 1.0
+        """
     
     def _build_concept_resolution_prompt(self, concept: str, schema_context: Dict[str, Any]) -> str:
         """Build prompt for concept resolution"""
@@ -864,7 +1276,7 @@ class QueryResolutionComponent:
     ) -> str:
         """Build prompt for generating multiple interpretations"""
         # Format original query
-        original_query = structured_query._meta.raw_query
+        original_query = structured_query.meta.raw_query
         
         # Format ambiguities
         ambiguities = "\n".join([f"- {a}" for a in structured_query.identified_ambiguities])

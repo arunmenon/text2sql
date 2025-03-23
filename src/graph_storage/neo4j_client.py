@@ -1263,3 +1263,101 @@ class Neo4jClient:
         }
         
         return self._execute_query(query, params)
+        
+    def update_term_mapping_usage(self, tenant_id: str, term_name: str, table_name: str) -> Dict:
+        """
+        Update usage metrics for a business term mapping to a table.
+        Increments usage count and updates weight for the mapping.
+        
+        Args:
+            tenant_id: Tenant ID
+            term_name: Business glossary term
+            table_name: Table name the term maps to
+            
+        Returns:
+            Updated term mapping data
+        """
+        query = """
+        MATCH (t:GlossaryTerm {tenant_id: $tenant_id, name: $term_name})
+        MATCH (table:Table {tenant_id: $tenant_id, name: $table_name})
+        MERGE (t)-[r:MAPS_TO]->(table)
+        ON CREATE SET
+            r.usage_count = 1,
+            r.weight = 1.0,
+            r.created_at = datetime()
+        ON MATCH SET
+            r.usage_count = COALESCE(r.usage_count, 0) + 1,
+            r.last_used_at = datetime(),
+            // Increase weight slightly with each usage
+            r.weight = CASE 
+                WHEN r.weight IS NULL THEN 1.0
+                ELSE r.weight + 0.05
+            END
+        
+        WITH t, r, table
+        
+        // Update term's overall usage metrics
+        SET t.total_usage_count = COALESCE(t.total_usage_count, 0) + 1,
+            t.last_used_at = datetime()
+            
+        RETURN t, r, table
+        """
+        
+        params = {
+            "tenant_id": tenant_id,
+            "term_name": term_name,
+            "table_name": table_name
+        }
+        
+        result = self._execute_query(query, params)
+        return result[0] if result else None
+    
+    def get_term_mapping_stats(self, tenant_id: str, term_name: str = None) -> List[Dict]:
+        """
+        Get usage statistics for term mappings.
+        
+        Args:
+            tenant_id: Tenant ID
+            term_name: Optional term name to filter by
+            
+        Returns:
+            List of term mapping statistics
+        """
+        if term_name:
+            query = """
+            MATCH (t:GlossaryTerm {tenant_id: $tenant_id, name: $term_name})-[r:MAPS_TO]->(entity)
+            RETURN 
+                t.name as term_name,
+                CASE WHEN 'Table' IN labels(entity) THEN entity.name ELSE null END as table_name,
+                CASE WHEN 'Column' IN labels(entity) THEN entity.name ELSE null END as column_name,
+                CASE WHEN 'Column' IN labels(entity) THEN entity.table_name ELSE null END as column_table,
+                COALESCE(r.usage_count, 0) as usage_count,
+                COALESCE(r.weight, 1.0) as weight,
+                r.last_used_at as last_used
+            ORDER BY r.usage_count DESC
+            """
+            
+            params = {
+                "tenant_id": tenant_id,
+                "term_name": term_name
+            }
+        else:
+            query = """
+            MATCH (t:GlossaryTerm {tenant_id: $tenant_id})-[r:MAPS_TO]->(entity)
+            RETURN 
+                t.name as term_name,
+                CASE WHEN 'Table' IN labels(entity) THEN entity.name ELSE null END as table_name,
+                CASE WHEN 'Column' IN labels(entity) THEN entity.name ELSE null END as column_name,
+                CASE WHEN 'Column' IN labels(entity) THEN entity.table_name ELSE null END as column_table,
+                COALESCE(r.usage_count, 0) as usage_count,
+                COALESCE(r.weight, 1.0) as weight,
+                r.last_used_at as last_used
+            ORDER BY r.usage_count DESC
+            LIMIT 100
+            """
+            
+            params = {
+                "tenant_id": tenant_id
+            }
+        
+        return self._execute_query(query, params)
