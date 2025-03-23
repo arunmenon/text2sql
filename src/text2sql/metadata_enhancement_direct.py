@@ -14,6 +14,7 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 
 from src.llm.client import LLMClient
 from src.graph_storage.neo4j_client import Neo4jClient
+from src.text2sql.enhanced_glossary.generator import EnhancedBusinessGlossaryGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +24,22 @@ class DirectEnhancementWorkflow:
     with direct normalized graph structure creation
     """
     
-    def __init__(self, neo4j_client: Neo4jClient, llm_client: LLMClient):
+    def __init__(self, neo4j_client: Neo4jClient, llm_client: LLMClient, use_enhanced_glossary: bool = True):
         """
         Initialize schema enhancement workflow.
         
         Args:
             neo4j_client: Neo4j client for schema access
             llm_client: LLM client for metadata enhancement
+            use_enhanced_glossary: Whether to use the enhanced business glossary generator
         """
         self.neo4j_client = neo4j_client
         self.llm_client = llm_client
+        self.use_enhanced_glossary = use_enhanced_glossary
+        
+        # Initialize the enhanced business glossary generator if enabled
+        if self.use_enhanced_glossary:
+            self.glossary_generator = EnhancedBusinessGlossaryGenerator(llm_client)
         
     async def run(self, tenant_id: str, dataset_id: str):
         """
@@ -243,74 +250,67 @@ class DirectEnhancementWorkflow:
                 "columns": column_info
             })
         
-        # Create prompt for generating business glossary input
-        prompt = f"""
-        Analyze the following database schema and generate a comprehensive business glossary.
-        
-        Database schema:
-        {json.dumps(table_info, indent=2)}
-        
-        For this database, create a business glossary that includes important business terms.
-        For each term, provide:
-        1. Term name
-        2. Term definition in plain business language
-        3. Technical mapping to tables/columns where relevant
-        4. Related terms (other business terms that are related to this one)
-        5. Synonyms for the term
-
-        Additionally, include common business metrics and KPIs that can be derived from this data.
-        For each metric, provide:
-        1. Metric name
-        2. Definition
-        3. Which tables it can be derived from
-
-        Format your response as a structured JSON with the following schema:
-        {
-          "business_terms": [
-            {
-              "name": "string",
-              "definition": "string",
-              "technical_mapping": {
-                "tables": ["string"],
-                "columns": [{"table": "string", "column": "string"}]
-              },
-              "related_terms": ["string"],
-              "synonyms": ["string"]
-            }
-          ],
-          "business_metrics": [
-            {
-              "name": "string",
-              "definition": "string",
-              "derived_from": ["string"]
-            }
-          ]
+        # Format schema data for use by either approach
+        schema_data = {
+            "tenant_id": tenant_id,
+            "dataset_id": dataset_id,
+            "tables": table_info
         }
-        """
         
-        # Generate structured glossary data
-        logger.info("Generating business glossary...")
-        response = await self.llm_client.generate_structured_output(prompt, {
-            "business_terms": [
-                {
-                    "name": "string",
-                    "definition": "string",
-                    "technical_mapping": {
-                        "tables": ["string"],
-                        "columns": [{"table": "string", "column": "string"}]
-                    },
-                    "related_terms": ["string"],
-                    "synonyms": ["string"]
-                }
-            ],
-            "business_metrics": [
-                {
-                    "name": "string",
-                    "definition": "string",
-                    "derived_from": ["string"]
-                }
-            ]
-        })
+        # Choose between enhanced and original glossary generation approach
+        if self.use_enhanced_glossary:
+            # Use the enhanced multi-agent approach
+            logger.info(f"Generating enhanced business glossary for {tenant_id}/{dataset_id}...")
+            response = await self.glossary_generator.generate_enhanced_glossary(schema_data, tenant_id)
+        else:
+            # Use the original approach for backward compatibility
+            logger.info("Using original glossary generation approach...")
+            # Create prompt for generating business glossary input
+            prompt = f"""
+            Analyze the following database schema and generate a comprehensive business glossary.
+            
+            Database schema:
+            {json.dumps(table_info, indent=2)}
+            
+            For this database, create a business glossary that includes important business terms.
+            For each term, provide:
+            1. Term name
+            2. Term definition in plain business language
+            3. Technical mapping to tables/columns where relevant
+            4. Related terms (other business terms that are related to this one)
+            5. Synonyms for the term
+    
+            Additionally, include common business metrics and KPIs that can be derived from this data.
+            For each metric, provide:
+            1. Metric name
+            2. Definition
+            3. Which tables it can be derived from
+    
+            Format your response as a structured JSON with business_terms and business_metrics arrays.
+            """
+            
+            # Generate structured glossary data
+            response = await self.llm_client.generate_structured_output(prompt, {
+                "business_terms": [
+                    {
+                        "name": "string",
+                        "definition": "string",
+                        "technical_mapping": {
+                            "tables": ["string"],
+                            "columns": [{"table": "string", "column": "string"}]
+                        },
+                        "related_terms": ["string"],
+                        "synonyms": ["string"]
+                    }
+                ],
+                "business_metrics": [
+                    {
+                        "name": "string",
+                        "definition": "string",
+                        "derived_from": ["string"]
+                    }
+                ]
+            })
         
         # Create business glossary structure in Neo4j
         logger.info("Creating business glossary structure...")
@@ -465,7 +465,8 @@ class DirectEnhancementWorkflow:
                 try:
                     self.neo4j_client._execute_query(synonym_query, {
                         "tenant_id": tenant_id,
-                        "term_name": term_name
+                        "term_name": term_name,
+                        "synonym": synonym  # Add the missing synonym parameter
                     })
                 except Exception as e:
                     logger.warning(f"Could not create synonym relationship: {term_name} -> {synonym}: {e}")
@@ -998,7 +999,7 @@ class DirectEnhancementWorkflow:
         self.neo4j_client._execute_query(query, params)
 
 
-async def run_direct_enhancement(tenant_id: str, dataset_id: str = None):
+async def run_direct_enhancement(tenant_id: str, dataset_id: str = None, use_enhanced_glossary: bool = True):
     """Run enhanced schema workflow as a standalone process"""
     try:
         # Get Neo4j connection details
@@ -1010,6 +1011,11 @@ async def run_direct_enhancement(tenant_id: str, dataset_id: str = None):
         llm_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY")
         llm_model = os.getenv("LLM_MODEL", "gpt-4o")
         
+        # Check if enhanced glossary is explicitly enabled or disabled via environment
+        env_enhanced_glossary = os.getenv("USE_ENHANCED_GLOSSARY")
+        if env_enhanced_glossary is not None:
+            use_enhanced_glossary = env_enhanced_glossary.lower() in ("true", "1", "yes")
+        
         if not llm_api_key:
             logger.error("LLM API key not configured")
             return False
@@ -1019,7 +1025,7 @@ async def run_direct_enhancement(tenant_id: str, dataset_id: str = None):
         llm_client = LLMClient(api_key=llm_api_key, model=llm_model)
         
         # Initialize and run workflow
-        workflow = DirectEnhancementWorkflow(neo4j_client, llm_client)
+        workflow = DirectEnhancementWorkflow(neo4j_client, llm_client, use_enhanced_glossary=use_enhanced_glossary)
         
         if dataset_id:
             # Enhance specific dataset

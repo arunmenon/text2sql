@@ -1,0 +1,27 @@
+# Business Glossary Term Generation
+
+## Database Schema:
+{formatted_schema}
+
+## Instructions:
+Generate a comprehensive business glossary by analyzing this database schema.
+
+For each business term:
+1. FIRST identify tables and columns that represent business concepts
+2. THEN think about what these elements mean in business language
+3. FINALLY create clear, concise definitions
+
+## Expected Output Format:
+For each term provide:
+- Term name (using business language, not technical terms)
+- Definition (1-2 sentences explaining the concept)
+- Technical mapping (which table/column this maps to)
+- Synonyms (alternative ways this term might be referred to)
+
+## Examples:
+| Term | Definition | Technical Mapping | Synonyms |
+|------|------------|-------------------|----------|
+| Customer | A person or organization that has purchased products | customers table | Client, Buyer, Account |
+| Order Status | The current state of a customer order | orders.status column | Order State, Fulfillment Status |
+
+Think carefully about each table and its business purpose.

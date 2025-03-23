@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "business_terms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "definition": {"type": "string"},
+          "technical_mapping": {
+            "type": "object",
+            "properties": {
+              "tables": {"type": "array", "items": {"type": "string"}},
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "table": {"type": "string"},
+                    "column": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "synonyms": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}
