@@ -435,14 +435,15 @@ Let's examine how GraphAlchemy processes complex queries with composite business
       {
         "source_text": "at-risk accounts",
         "resolved_to": {
-          "type": "business_concept",
+          "type": "runtime_composite_concept", // Note: This is handled at runtime, not as a persistent node
           "name": "at_risk_accounts",
           "definition": "accounts that have high value but show warning signs",
           "attributes": [
             {"name": "high_value", "definition": "accounts.annual_value > 50000"},
             {"name": "warning_signs", "definition": "one or more of: payment_delays, support_escalations, negative_feedback"}
           ],
-          "confidence": 0.93
+          "confidence": 0.93,
+          "resolution_method": "runtime_composite_detection" // Added to clarify this is runtime detection
         }
       }
     ],

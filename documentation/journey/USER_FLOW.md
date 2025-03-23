@@ -492,14 +492,20 @@ This query involves complex business logic, predictive elements, and multiple ta
 
 1. Resolving the complex concept "potential stockouts":
 ```
-MATCH (c:CompositeConcept {name: 'potential_stockouts'})
-RETURN c.definition, c.query_pattern, c.required_tables
+// Note: CompositeConcept nodes don't actually exist in the graph
+// In reality, this is implemented as a runtime check against GlossaryTerm
+// nodes and their combinations, using the _detect_composite_concepts() method
+// Here's what the conceptual flow looks like:
+
+MATCH (g:GlossaryTerm)-[:RELATED_TO*]->(related:GlossaryTerm)
+WHERE g.name CONTAINS 'stock' OR g.name CONTAINS 'inventory'
+RETURN g.definition, related.name
 ```
 
-The graph returns:
+The system identifies through runtime analysis:
 - Definition: "Products where current inventory level minus forecasted demand over a given period falls below the safety stock level"
 - Required tables: Products, Inventory, SalesHistory, ForecastParameters
-- Query pattern includes calculation logic for forecasting
+- Logic for forecasting is determined at runtime through the LLM and glossary term definitions
 
 2. Resolving time component:
 ```
@@ -636,14 +642,16 @@ This query combines multiple concepts: "loyal customers" and "ordered recently".
 The system looks up the meaning of composite concepts:
 
 ```
-MATCH (c:CompositeConcept {name: 'loyal_customer'})
-RETURN c.definition, c.query_pattern
+// Note: These concepts are handled at runtime, not as persistent CompositeConcept nodes
+// The system uses the _detect_composite_concepts() and _resolve_composite_concept() methods
+// to dynamically interpret these concepts using GlossaryTerm definitions
 
-MATCH (c:CompositeConcept {name: 'recent_order'})
-RETURN c.definition, c.query_pattern
+MATCH (g:GlossaryTerm)
+WHERE g.name CONTAINS 'loyal' OR g.name CONTAINS 'recent' OR g.name CONTAINS 'order'
+RETURN g.name, g.definition
 ```
 
-The graph returns:
+The runtime composite concept analysis identifies:
 - "loyal customers" = "customers with lifetime order value > $1000 OR order frequency > 1 per month over past year"
 - "ordered recently" = "has order within last 30 days"
 
@@ -712,9 +720,10 @@ Throughout these examples, we can see how GraphAlchemy's hybrid approach provide
 
 The semantic graph provides:
 - Precise mapping between natural language terms and technical entities
-- Understanding of business concepts and their technical implementations
+- Storage of business glossary terms with their definitions (as GlossaryTerm nodes)
 - Knowledge of join paths and relationships between entities
 - Confidence scoring for ambiguous mappings
+- Note: Complex composite concepts are handled at runtime rather than as persistent nodes
 
 ### 2. LLM Handles Linguistic Complexity
 
@@ -739,9 +748,11 @@ GraphAlchemy maintains structured representations at each stage of processing:
 
 1. **Initial NLU Output**: Entities, relationships, and intents extracted from the query
 2. **Entity Resolution Stage**: Mappings between query terms and semantic graph elements
-3. **Structured Query Representation**: A comprehensive internal model of the query's meaning
-4. **SQL Structure Plan**: A structured representation of the SQL to be generated, before string rendering
-5. **Confidence Metrics**: Cumulative scores for each interpretation at every stage
+3. **Runtime Composite Concept Detection**: Dynamic identification and resolution of complex concepts using existing glossary terms (not from persistent CompositeConcept nodes)
+4. **Join Path Discovery**: Identification of optimal paths between tables using multiple strategies
+5. **Structured Query Representation**: A comprehensive internal model of the query's meaning
+6. **SQL Structure Plan**: A structured representation of the SQL to be generated, before string rendering
+7. **Confidence Metrics**: Cumulative scores for each interpretation at every stage
 
 These internal representations ensure transparency, explainability, and the ability to debug and improve the system.
 
