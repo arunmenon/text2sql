@@ -7,12 +7,13 @@ from typing import Dict, List, Any, Union
 
 logger = logging.getLogger(__name__)
 
-def format_schema(schema_data: Union[Dict[str, Any], str]) -> str:
+def format_schema(schema_data: Union[Dict[str, Any], str], data_context_provider=None) -> str:
     """
     Format schema data for inclusion in prompts.
     
     Args:
         schema_data: Database schema information
+        data_context_provider: Optional provider for sample data context
         
     Returns:
         Formatted schema text
@@ -46,6 +47,33 @@ def format_schema(schema_data: Union[Dict[str, Any], str]) -> str:
                         col_desc = column.get("description", "")
                         
                         formatted.append(f"  Column: {col_name} ({col_type}) - {col_desc}")
+                
+                # Add sample data if data context provider is available
+                if data_context_provider:
+                    # Convert columns to format expected by data_context_provider
+                    column_dicts = []
+                    for col_info in columns:
+                        if isinstance(col_info, dict):
+                            column_dicts.append({
+                                "name": col_info.get("column_name", "") or col_info.get("name", ""),
+                                "data_type": col_info.get("data_type", "")
+                            })
+                        elif isinstance(col_info, str):
+                            # Handle case where column is just a string
+                            column_dicts.append({"name": col_info, "data_type": ""})
+                    
+                    # Get and add sample data
+                    sample_data = data_context_provider.get_table_data_context(table_name, column_dicts)
+                    if sample_data:
+                        formatted.append("\n" + sample_data)
+                        
+                        # Add column examples
+                        column_examples = data_context_provider.get_column_examples_for_batch(
+                            table_name, column_dicts, max_examples=3
+                        )
+                        if column_examples:
+                            formatted.append(column_examples)
+        
         # Handle the case where schema_data is a dictionary with table names as keys
         elif isinstance(schema_data, dict):
             for table_name, table_info in schema_data.items():
@@ -56,6 +84,7 @@ def format_schema(schema_data: Union[Dict[str, Any], str]) -> str:
                 formatted.append(f"Table: {table_name} - {description}")
                 
                 if "columns" in table_info and isinstance(table_info["columns"], list):
+                    column_dicts = []
                     for column in table_info["columns"]:
                         if not isinstance(column, dict):
                             continue
@@ -65,6 +94,24 @@ def format_schema(schema_data: Union[Dict[str, Any], str]) -> str:
                         col_desc = column.get("description", "")
                         
                         formatted.append(f"  Column: {col_name} ({col_type}) - {col_desc}")
+                        column_dicts.append({
+                            "name": col_name,
+                            "data_type": col_type
+                        })
+                    
+                    # Add sample data if data context provider is available
+                    if data_context_provider:
+                        # Get and add sample data
+                        sample_data = data_context_provider.get_table_data_context(table_name, column_dicts)
+                        if sample_data:
+                            formatted.append("\n" + sample_data)
+                            
+                            # Add column examples
+                            column_examples = data_context_provider.get_column_examples_for_batch(
+                                table_name, column_dicts, max_examples=3
+                            )
+                            if column_examples:
+                                formatted.append(column_examples)
         else:
             logger.warning(f"Unrecognized schema format: {type(schema_data)}")
             return "Schema format unrecognized"

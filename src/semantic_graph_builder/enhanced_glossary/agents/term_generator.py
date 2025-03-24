@@ -21,16 +21,18 @@ class TermGeneratorAgent:
     and creating initial definitions and technical mappings.
     """
     
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, data_context_provider=None):
         """
         Initialize the Term Generator agent.
         
         Args:
             llm_client: LLM client for text generation
+            data_context_provider: Optional provider for sample data context
         """
         self.llm_client = llm_client
         self.prompt_loader = PromptLoader()
         self.schema_loader = SchemaLoader()
+        self.data_context_provider = data_context_provider
         
     async def generate(self, schema_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -43,8 +45,8 @@ class TermGeneratorAgent:
             Initial business terms dictionary
         """
         try:
-            # Format schema for prompt
-            formatted_schema = format_schema(schema_data)
+            # Format schema for prompt with data context if available
+            formatted_schema = format_schema(schema_data, self.data_context_provider)
             logger.debug(f"Formatted schema: {formatted_schema[:200]}...")
             
             # Load prompt and format it

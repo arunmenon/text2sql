@@ -4,24 +4,32 @@
 {formatted_schema}
 
 ## Instructions:
-Generate a comprehensive business glossary by analyzing this database schema.
+Generate a comprehensive business glossary by analyzing this database schema and sample data.
 
 For each business term:
 1. FIRST identify tables and columns that represent business concepts
-2. THEN think about what these elements mean in business language
-3. FINALLY create clear, concise definitions
+2. THEN analyze the sample data values to understand what the data actually represents
+3. NEXT think about what these elements mean in business language
+4. FINALLY create clear, concise definitions grounded in the actual data
+
+## Important - Using Sample Data:
+- Look at the sample data provided for each table to understand the actual content
+- Use the real column values in the examples to determine the meaning and purpose
+- Base your definitions on actual data patterns rather than just column names
+- Pay attention to value formats, ranges, and patterns in the sample data
 
 ## Expected Output Format:
 For each term provide:
 - Term name (using business language, not technical terms)
-- Definition (1-2 sentences explaining the concept)
+- Definition (1-2 sentences explaining the concept, referencing actual data formats if relevant)
 - Technical mapping (which table/column this maps to)
 - Synonyms (alternative ways this term might be referred to)
 
 ## Examples:
 | Term | Definition | Technical Mapping | Synonyms |
 |------|------------|-------------------|----------|
-| Customer | A person or organization that has purchased products | customers table | Client, Buyer, Account |
-| Order Status | The current state of a customer order | orders.status column | Order State, Fulfillment Status |
+| Customer | A person or organization that has purchased products (identified by unique IDs like 'CUST-1234') | customers table | Client, Buyer, Account |
+| Order Status | The current state of a customer order, with values such as 'Processing', 'Shipped', or 'Delivered' | orders.status column | Order State, Fulfillment Status |
 
-Think carefully about each table and its business purpose.
+Think carefully about each table, its sample data, and its business purpose.
+Your glossary terms should be firmly grounded in the actual data examples.

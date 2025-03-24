@@ -50,7 +50,7 @@ class DirectEnhancementWorkflow:
         
         # Initialize the enhanced business glossary generator if enabled
         if self.use_enhanced_glossary:
-            self.glossary_generator = EnhancedBusinessGlossaryGenerator(llm_client)
+            self.glossary_generator = EnhancedBusinessGlossaryGenerator(llm_client, self.data_context_provider)
         
     async def run(self, tenant_id: str, dataset_id: str):
         """

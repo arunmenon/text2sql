@@ -24,17 +24,19 @@ class EnhancedBusinessGlossaryGenerator:
     3. Term Validator - Validates technical mappings and adds confidence scores
     """
     
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, data_context_provider=None):
         """
         Initialize the enhanced business glossary generator.
         
         Args:
             llm_client: LLM client for text generation
+            data_context_provider: Optional provider for sample data context
         """
         self.llm_client = llm_client
+        self.data_context_provider = data_context_provider
         
         # Initialize the specialized agents
-        self.term_generator = TermGeneratorAgent(llm_client)
+        self.term_generator = TermGeneratorAgent(llm_client, data_context_provider)
         self.term_refiner = TermRefinerAgent(llm_client)
         self.term_validator = TermValidatorAgent(llm_client)
     
