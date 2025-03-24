@@ -9,12 +9,14 @@ import logging
 import os
 import asyncio
 import json
+import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Set
 
 from src.llm.client import LLMClient
 from src.graph_storage.neo4j_client import Neo4jClient
 from src.semantic_graph_builder.enhanced_glossary.generator import EnhancedBusinessGlossaryGenerator
+from src.semantic_graph_builder.table_context_gen.utils.prompt_data_context_provider import PromptDataContextProvider
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class DirectEnhancementWorkflow:
     with direct normalized graph structure creation
     """
     
-    def __init__(self, neo4j_client: Neo4jClient, llm_client: LLMClient, use_enhanced_glossary: bool = True):
+    def __init__(self, neo4j_client: Neo4jClient, llm_client: LLMClient, use_enhanced_glossary: bool = True, csv_dir_path: Optional[str] = None):
         """
         Initialize schema enhancement workflow.
         
@@ -32,10 +34,19 @@ class DirectEnhancementWorkflow:
             neo4j_client: Neo4j client for schema access
             llm_client: LLM client for metadata enhancement
             use_enhanced_glossary: Whether to use the enhanced business glossary generator
+            csv_dir_path: Path to directory containing CSV files for data samples (optional)
         """
         self.neo4j_client = neo4j_client
         self.llm_client = llm_client
         self.use_enhanced_glossary = use_enhanced_glossary
+        
+        # Initialize the prompt loader
+        self.prompt_loader = PromptLoader()
+        
+        # Initialize the data context provider if CSV path is provided
+        self.data_context_provider = None
+        if csv_dir_path:
+            self.data_context_provider = PromptDataContextProvider(csv_dir_path)
         
         # Initialize the enhanced business glossary generator if enabled
         if self.use_enhanced_glossary:
@@ -846,26 +857,21 @@ class DirectEnhancementWorkflow:
             for col in columns if col.get('name') or col.get('column_name')
         ])
         
-        return f"""
-        I need a comprehensive business description for a database table.
+        # Get sample data if available
+        sample_data = ""
+        if self.data_context_provider:
+            sample_data = self.data_context_provider.get_table_data_context(table_name, columns)
         
-        Table name: {table_name}
+        # Format variables for the prompt template
+        prompt_vars = {
+            "table_name": table_name,
+            "original_description": original_description if original_description else "No description available",
+            "columns_text": columns_text,
+            "sample_data": sample_data
+        }
         
-        Current description: {original_description if original_description else "No description available"}
-        
-        Columns:
-        {columns_text}
-        
-        Please provide a detailed business-oriented description of this table that explains:
-        1. What kind of data it likely contains
-        2. Its business purpose in the organization
-        3. How it might relate to other tables (based on the column names)
-        4. Typical use cases for this data
-        5. The entity lifecycle represented by this table
-        
-        Keep the description business-focused, detailed yet concise (3-5 sentences long).
-        Focus on explaining the business purpose rather than just listing the columns.
-        """
+        # Use the prompt loader to format the template
+        return self.prompt_loader.format_prompt("table_description_enhancement", **prompt_vars)
     
     def _build_column_enhancement_prompt(
         self, table_name: str, columns_to_enhance: List[Dict[str, Any]], all_columns: List[Dict[str, Any]]
@@ -883,23 +889,30 @@ class DirectEnhancementWorkflow:
             for col in all_columns if col.get('name') or col.get('column_name')
         ])
         
-        return f"""
-        I need detailed descriptions for these columns in the table '{table_name}'.
+        # Get sample data and column examples if available
+        sample_data = ""
+        column_examples = ""
         
-        Columns needing descriptions:
-        {columns_to_enhance_text}
+        if self.data_context_provider:
+            # Get overall table sample data
+            sample_data = self.data_context_provider.get_table_data_context(table_name, all_columns)
+            
+            # Get examples for columns being enhanced
+            column_examples = self.data_context_provider.get_column_examples_for_batch(
+                table_name, columns_to_enhance
+            )
         
-        All columns in this table (for context):
-        {all_columns_text}
+        # Format variables for the prompt template
+        prompt_vars = {
+            "table_name": table_name,
+            "columns_to_enhance_text": columns_to_enhance_text,
+            "all_columns_text": all_columns_text,
+            "sample_data": sample_data,
+            "column_examples": column_examples
+        }
         
-        For each column that needs a description, provide:
-        1. A clear description of what the column represents
-        2. Its business purpose and how it's used
-        3. Any data constraints or rules that might apply
-        4. Potential relationships or joins to other tables
-        
-        Respond with structured data for each column, focusing on business meaning rather than technical details.
-        """
+        # Use the prompt loader to format the template
+        return self.prompt_loader.format_prompt("column_description_enhancement", **prompt_vars)
     
     def _build_semantic_relationship_prompt(
         self, table1_name: str, table1_columns: List[Dict[str, Any]],
@@ -999,7 +1012,7 @@ class DirectEnhancementWorkflow:
         self.neo4j_client._execute_query(query, params)
 
 
-async def run_direct_enhancement(tenant_id: str, dataset_id: str = None, use_enhanced_glossary: bool = True):
+async def run_direct_enhancement(tenant_id: str, dataset_id: str = None, use_enhanced_glossary: bool = True, csv_dir_path: str = None):
     """Run enhanced schema workflow as a standalone process"""
     try:
         # Get Neo4j connection details
@@ -1016,6 +1029,10 @@ async def run_direct_enhancement(tenant_id: str, dataset_id: str = None, use_enh
         if env_enhanced_glossary is not None:
             use_enhanced_glossary = env_enhanced_glossary.lower() in ("true", "1", "yes")
         
+        # Get CSV directory path from environment if not provided
+        if not csv_dir_path:
+            csv_dir_path = os.getenv("CSV_DATA_DIR")
+        
         if not llm_api_key:
             logger.error("LLM API key not configured")
             return False
@@ -1025,16 +1042,25 @@ async def run_direct_enhancement(tenant_id: str, dataset_id: str = None, use_enh
         llm_client = LLMClient(api_key=llm_api_key, model=llm_model)
         
         # Initialize and run workflow
-        workflow = DirectEnhancementWorkflow(neo4j_client, llm_client, use_enhanced_glossary=use_enhanced_glossary)
+        workflow = DirectEnhancementWorkflow(
+            neo4j_client, 
+            llm_client, 
+            use_enhanced_glossary=use_enhanced_glossary,
+            csv_dir_path=csv_dir_path
+        )
         
         if dataset_id:
             # Enhance specific dataset
             logger.info(f"Enhancing schema for tenant {tenant_id}, dataset {dataset_id}")
+            if csv_dir_path:
+                logger.info(f"Using data samples from CSV directory: {csv_dir_path}")
             success = await workflow.run(tenant_id, dataset_id)
         else:
             # Enhance all datasets for tenant
             datasets = neo4j_client.get_datasets_for_tenant(tenant_id)
             logger.info(f"Enhancing schema for {len(datasets)} datasets")
+            if csv_dir_path:
+                logger.info(f"Using data samples from CSV directory: {csv_dir_path}")
             
             success = True
             for dataset in datasets:

@@ -7,12 +7,15 @@ Current description: {original_description}
 Columns:
 {columns_text}
 
+{sample_data}
+
 Please provide a detailed business-oriented description of this table that explains:
-1. What kind of data it likely contains
+1. What kind of data it likely contains (use the sample data to ground your description when available)
 2. Its business purpose in the organization
-3. How it might relate to other tables (based on the column names)
+3. How it might relate to other tables (based on the column names and data)
 4. Typical use cases for this data
 5. The entity lifecycle represented by this table
 
 Keep the description business-focused, detailed yet concise (3-5 sentences long).
 Focus on explaining the business purpose rather than just listing the columns.
+Base your description on the actual data patterns shown in the sample data when available.

@@ -6,10 +6,16 @@ Columns needing descriptions:
 All columns in this table (for context):
 {all_columns_text}
 
+{sample_data}
+
+{column_examples}
+
 For each column that needs a description, provide:
-1. A clear description of what the column represents
+1. A clear description of what the column represents, based on the actual data values shown
 2. Its business purpose and how it's used
-3. Any data constraints or rules that might apply
+3. Any data constraints or rules that might apply (derived from the sample values)
 4. Potential relationships or joins to other tables
+5. Data patterns or formats observed in the sample values
 
 Respond with structured data for each column, focusing on business meaning rather than technical details.
+Ground your descriptions in the actual data examples when available.
