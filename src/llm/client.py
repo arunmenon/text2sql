@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """Client for interacting with LLM APIs"""
     
-    def __init__(self, api_key: str, provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, api_key: str, provider: str = "openai", model: str = "gpt-4o", timeout_ms: int = 120000):
         """
         Initialize LLM client.
         
@@ -23,11 +23,14 @@ class LLMClient:
             api_key: API key for the LLM service
             provider: Provider name ("openai" or "anthropic")
             model: Model identifier
+            timeout_ms: Timeout in milliseconds (default: 120000ms = 2 minutes)
         """
         self.api_key = api_key
         self.provider = provider.lower()
         self.model = model
-        self.client = httpx.AsyncClient(timeout=120.0)  # 2-minute timeout
+        # Convert to seconds for httpx
+        timeout_seconds = timeout_ms / 1000.0
+        self.client = httpx.AsyncClient(timeout=timeout_seconds)
     
     async def generate(self, prompt: str, temperature: float = 0.0) -> str:
         """

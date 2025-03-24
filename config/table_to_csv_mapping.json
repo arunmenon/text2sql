@@ -1,0 +1,12 @@
+{
+    "Proposals": "sc_walmart_proposals.csv",
+    "ProposalLineItems": "sc_walmart_proposal_line_items.csv",
+    "ServiceChannelInvoice": "vw_fac_servicechannel_invoice.csv",
+    "WorkOrders": "sc_walmart_workorder.csv",
+    "RealtyAlignment": "isp_fm_realty_alignment.csv",
+    "AssetLeak": "sc_walmart_asset_leak_inspections.csv",
+    "Locations": "sc_walmart_locations.csv",
+    "RackScore": "rack_score.csv",
+    "Asset": "asset.csv",
+    "ProductLoss": "ds_product_loss.csv"
+}
