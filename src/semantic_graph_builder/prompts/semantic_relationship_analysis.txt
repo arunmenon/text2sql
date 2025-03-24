@@ -1,0 +1,25 @@
+Analyze these two database tables and identify potential semantic relationships between them:
+
+TABLE 1: {table1_name}
+Columns:
+{table1_columns_text}
+
+TABLE 2: {table2_name}
+Columns:
+{table2_columns_text}
+
+Identify potential foreign key relationships between these tables based on:
+1. Column names and patterns
+2. Data types
+3. Semantic relationships implied by descriptions
+4. Business domain knowledge
+
+For each potential relationship, specify:
+- Source table and column
+- Target table and column
+- Relationship type (one-to-many, many-to-many, etc.)
+- Confidence level (0.0-1.0)
+- A short explanation for the relationship
+
+Only include relationships that make business sense with a confidence of at least 0.6.
+Focus on semantic relationships rather than just naming patterns.

@@ -1,0 +1,12 @@
+Analyze the following database schema and determine the business domain it represents:
+
+{schema_text}
+
+Please provide:
+1. The primary business domain (e.g., retail, healthcare, finance, etc.)
+2. Key business entities represented in this data
+3. Potential business questions this data could answer
+4. Industry-specific terminology relevant to this domain
+5. Common business metrics and KPIs for this domain
+
+Format your response as a structured domain analysis.

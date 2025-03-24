@@ -1,0 +1,18 @@
+I need a comprehensive business description for a database table.
+
+Table name: {table_name}
+
+Current description: {original_description}
+
+Columns:
+{columns_text}
+
+Please provide a detailed business-oriented description of this table that explains:
+1. What kind of data it likely contains
+2. Its business purpose in the organization
+3. How it might relate to other tables (based on the column names)
+4. Typical use cases for this data
+5. The entity lifecycle represented by this table
+
+Keep the description business-focused, detailed yet concise (3-5 sentences long).
+Focus on explaining the business purpose rather than just listing the columns.

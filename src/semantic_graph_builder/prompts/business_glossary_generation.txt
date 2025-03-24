@@ -1,0 +1,13 @@
+Analyze the following database schema and generate a comprehensive business glossary.
+
+Database schema:
+{schema_json}
+
+For this database, create a business glossary that includes:
+1. Important business terms found in the schema
+2. Their definitions in plain business language
+3. Technical mappings to tables/columns where relevant
+4. Commonly used business metrics and KPIs derivable from this data
+5. Common synonyms and related terms
+
+Format your response as a structured glossary with clear term definitions.

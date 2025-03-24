@@ -1,0 +1,36 @@
+Analyze the following two database tables and identify potential relationships between them.
+
+Source Table: {source_table_name}
+Description: {source_table_description}
+Columns:
+{source_columns}
+
+{source_sample_data}
+
+Target Table: {target_table_name}
+Description: {target_table_description}
+Columns:
+{target_columns}
+
+{target_sample_data}
+
+{data_overlap_analysis}
+
+Based on the table and column names, data types, descriptions, and sample data, identify potential foreign key relationships.
+Consider standard database naming conventions, semantic relationships, and business logic.
+
+Focus on these types of relationships:
+1. Primary key to foreign key (e.g., customers.id → orders.customer_id)
+2. Lookup relationships (e.g., products.category_code → categories.code)
+3. Association/junction table relationships (for many-to-many)
+
+For each potential relationship:
+1. Specify the source and target tables and columns
+2. Indicate relationship type (one-to-one, one-to-many, many-to-many)
+3. Assign a confidence score (0.0-1.0)
+4. Provide a detailed explanation for why you believe this relationship exists
+   - Include specific evidence from column names, data types, and sample data
+   - Explain the business meaning of this relationship
+   - Note any patterns or anomalies in the data that support your conclusion
+
+Only return relationships with meaningful business value. Ignore implementation details like created_at/updated_at columns.

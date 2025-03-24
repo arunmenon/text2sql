@@ -1,0 +1,13 @@
+Analyze this database table and its columns to generate concept tags:
+
+Table: {table_name}
+Description: {table_description}
+
+Columns:
+{columns_json}
+
+For this table and its columns, provide:
+1. A list of business concept tags for the table itself (e.g., Transaction, Customer Profile, Product Catalog)
+2. For each column, assign concept tags that represent the semantic meaning (e.g., Personal Identifier, Timestamp, Amount, Status)
+
+Format your response as a structured JSON with table_tags and column_tags.

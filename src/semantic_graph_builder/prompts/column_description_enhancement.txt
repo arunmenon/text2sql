@@ -1,0 +1,15 @@
+I need detailed descriptions for these columns in the table '{table_name}'.
+
+Columns needing descriptions:
+{columns_to_enhance_text}
+
+All columns in this table (for context):
+{all_columns_text}
+
+For each column that needs a description, provide:
+1. A clear description of what the column represents
+2. Its business purpose and how it's used
+3. Any data constraints or rules that might apply
+4. Potential relationships or joins to other tables
+
+Respond with structured data for each column, focusing on business meaning rather than technical details.

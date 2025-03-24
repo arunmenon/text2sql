@@ -1,0 +1,15 @@
+Generate 5 useful sample SQL queries for the following database schema:
+
+Tables: {table_names}
+
+Key relationships:
+{relationships_text}
+
+For each query:
+1. Start with a clear comment explaining what business question the query answers
+2. Include joins between tables where appropriate
+3. Demonstrate filtering, aggregation, and sorting
+4. Make the queries progressively more complex to showcase different SQL features
+5. Include examples of common business analyses
+
+Format as SQL only, with comments explaining each query.

@@ -1,0 +1,21 @@
+# Business Glossary Technical Validation
+
+## Refined Business Terms:
+{formatted_terms}
+
+## Database Schema:
+{formatted_schema}
+
+## Instructions:
+Validate the technical accuracy of these business terms and their mappings.
+
+For each term:
+1. VERIFY that the technical mapping is correct
+2. ASSESS your confidence in the mapping (0.0-1.0)
+3. IDENTIFY any terms that can't be directly mapped
+4. EXPLAIN your reasoning for each validation
+
+## Expected Output:
+Return the validated glossary with confidence scores and explanations added.
+
+Think carefully about edge cases like terms that represent calculated values or concepts spanning multiple tables.

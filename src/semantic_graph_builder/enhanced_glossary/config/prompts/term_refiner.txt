@@ -1,0 +1,21 @@
+# Business Glossary Refinement
+
+## Initial Business Terms:
+{formatted_terms}
+
+## Database Schema:
+{formatted_schema}
+
+## Instructions:
+Refine these business terms by improving definitions, adding synonyms, and ensuring completeness.
+
+For each term:
+1. EVALUATE if the definition is clear, accurate and complete
+2. IDENTIFY any missing synonyms or alternative phrasings
+3. CHECK if technical mappings are appropriate
+4. CONSIDER if any important related terms are missing
+
+## Expected Output:
+Return the enhanced glossary with all improvements.
+
+Be thorough - good business glossaries are essential for natural language query understanding.
