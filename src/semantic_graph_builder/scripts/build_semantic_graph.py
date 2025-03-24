@@ -401,7 +401,8 @@ class SemanticGraphBuilder:
             workflow = DirectEnhancementWorkflow(
                 self.neo4j_client, 
                 self.llm_client, 
-                use_enhanced_glossary=self.use_enhanced_glossary
+                use_enhanced_glossary=self.use_enhanced_glossary,
+                csv_dir_path=self.csv_dir
             )
             success = await workflow.run(self.tenant_id, dataset_id)
             
@@ -517,7 +518,12 @@ class SemanticGraphBuilder:
                 
                 # Create workflow and run glossary generation
                 from src.semantic_graph_builder.table_context_gen.workflows.direct_enhancement import DirectEnhancementWorkflow
-                workflow = DirectEnhancementWorkflow(self.neo4j_client, self.llm_client, self.use_enhanced_glossary)
+                workflow = DirectEnhancementWorkflow(
+                    self.neo4j_client, 
+                    self.llm_client, 
+                    use_enhanced_glossary=self.use_enhanced_glossary,
+                    csv_dir_path=self.csv_dir
+                )
                 await workflow._generate_normalized_business_glossary(self.tenant_id, dataset_id, tables)
                 
             else:
