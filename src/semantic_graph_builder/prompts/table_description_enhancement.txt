@@ -9,13 +9,16 @@ Columns:
 
 {sample_data}
 
+Table Relationships:
+{table_relationships}
+
 Please provide a detailed business-oriented description of this table that explains:
 1. What kind of data it likely contains (use the sample data to ground your description when available)
 2. Its business purpose in the organization
-3. How it might relate to other tables (based on the column names and data)
+3. How it relates to other tables in the database (based on the relationships shown above)
 4. Typical use cases for this data
 5. The entity lifecycle represented by this table
 
 Keep the description business-focused, detailed yet concise (3-5 sentences long).
 Focus on explaining the business purpose rather than just listing the columns.
-Base your description on the actual data patterns shown in the sample data when available.
+Base your description on both the actual data patterns shown in the sample data and the table relationships in the database ecosystem.

@@ -17,6 +17,7 @@ from src.llm.client import LLMClient
 from src.graph_storage.neo4j_client import Neo4jClient
 from src.semantic_graph_builder.enhanced_glossary.generator import EnhancedBusinessGlossaryGenerator
 from src.semantic_graph_builder.table_context_gen.utils.prompt_data_context_provider import PromptDataContextProvider
+from src.semantic_graph_builder.table_context_gen.utils.table_neighborhood_provider import TableNeighborhoodProvider
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ class DirectEnhancementWorkflow:
         self.data_context_provider = None
         if csv_dir_path:
             self.data_context_provider = PromptDataContextProvider(csv_dir_path)
+            
+        # Initialize the table neighborhood provider for relationship context
+        self.neighborhood_provider = TableNeighborhoodProvider(neo4j_client)
         
         # Initialize the enhanced business glossary generator if enabled
         if self.use_enhanced_glossary:
@@ -63,6 +67,9 @@ class DirectEnhancementWorkflow:
         Returns:
             True if successful, False otherwise
         """
+        # Store tenant_id as instance variable for use throughout the workflow
+        self.tenant_id = tenant_id
+        
         logging.info(f"Starting direct enhancement workflow for {tenant_id}/{dataset_id}")
         
         try:
@@ -862,16 +869,37 @@ class DirectEnhancementWorkflow:
         if self.data_context_provider:
             sample_data = self.data_context_provider.get_table_data_context(table_name, columns)
         
+        # Get table relationship context with descriptions
+        table_relationships = self.neighborhood_provider.get_table_neighborhood(
+            tenant_id=self._get_current_tenant_id(), 
+            table_name=table_name,
+            max_tables=5,
+            max_relationships_per_table=3,
+            include_descriptions=True
+        )
+        if not table_relationships:
+            table_relationships = "No direct relationships with other tables detected."
+        
         # Format variables for the prompt template
         prompt_vars = {
             "table_name": table_name,
             "original_description": original_description if original_description else "No description available",
             "columns_text": columns_text,
-            "sample_data": sample_data
+            "sample_data": sample_data,
+            "table_relationships": table_relationships
         }
         
         # Use the prompt loader to format the template
         return self.prompt_loader.format_prompt("table_description_enhancement", **prompt_vars)
+        
+    def _get_current_tenant_id(self) -> str:
+        """Helper method to get the current tenant ID"""
+        # Return the tenant_id stored as instance variable
+        if hasattr(self, 'tenant_id') and self.tenant_id:
+            return self.tenant_id
+            
+        # Fallback to default tenant if not found
+        return "default"
     
     def _build_column_enhancement_prompt(
         self, table_name: str, columns_to_enhance: List[Dict[str, Any]], all_columns: List[Dict[str, Any]]
