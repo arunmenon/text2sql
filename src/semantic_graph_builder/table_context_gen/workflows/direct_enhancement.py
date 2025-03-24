@@ -18,6 +18,7 @@ from src.graph_storage.neo4j_client import Neo4jClient
 from src.semantic_graph_builder.enhanced_glossary.generator import EnhancedBusinessGlossaryGenerator
 from src.semantic_graph_builder.table_context_gen.utils.prompt_data_context_provider import PromptDataContextProvider
 from src.semantic_graph_builder.table_context_gen.utils.table_neighborhood_provider import TableNeighborhoodProvider
+from src.semantic_graph_builder.table_context_gen.utils.column_relationship_provider import ColumnRelationshipProvider
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,9 @@ class DirectEnhancementWorkflow:
             
         # Initialize the table neighborhood provider for relationship context
         self.neighborhood_provider = TableNeighborhoodProvider(neo4j_client)
+        
+        # Initialize the column relationship provider for column context
+        self.column_relationship_provider = ColumnRelationshipProvider(neo4j_client)
         
         # Initialize the enhanced business glossary generator if enabled
         if self.use_enhanced_glossary:
@@ -929,6 +933,30 @@ class DirectEnhancementWorkflow:
             column_examples = self.data_context_provider.get_column_examples_for_batch(
                 table_name, columns_to_enhance
             )
+            
+        # Get column relationship context
+        tenant_id = self._get_current_tenant_id()
+        column_relationships = []
+        
+        # Fetch relationship context for each column being enhanced
+        for col in columns_to_enhance:
+            col_name = col.get('name') or col.get('column_name')
+            if not col_name:
+                continue
+                
+            rel_context = self.column_relationship_provider.get_column_relationships(
+                tenant_id=tenant_id,
+                table_name=table_name,
+                column_name=col_name,
+                include_table_info=True,
+                max_relationships=5
+            )
+            
+            if rel_context:
+                column_relationships.append(f"RELATIONSHIP CONTEXT FOR {col_name}:\n{rel_context}\n")
+        
+        # Combine all column relationships
+        column_relationships_text = "\n".join(column_relationships)
         
         # Format variables for the prompt template
         prompt_vars = {
@@ -936,7 +964,8 @@ class DirectEnhancementWorkflow:
             "columns_to_enhance_text": columns_to_enhance_text,
             "all_columns_text": all_columns_text,
             "sample_data": sample_data,
-            "column_examples": column_examples
+            "column_examples": column_examples,
+            "column_relationships": column_relationships_text
         }
         
         # Use the prompt loader to format the template

@@ -10,12 +10,20 @@ All columns in this table (for context):
 
 {column_examples}
 
+{column_relationships}
+
 For each column that needs a description, provide:
 1. A clear description of what the column represents, based on the actual data values shown
 2. Its business purpose and how it's used
 3. Any data constraints or rules that might apply (derived from the sample values)
-4. Potential relationships or joins to other tables
+4. Relationships and joins with other tables (using the relationship information provided)
 5. Data patterns or formats observed in the sample values
 
+When describing columns that participate in relationships (as shown in the relationship context):
+- For foreign keys: Explain how they connect to their referenced tables and what that means for business users
+- For primary keys being referenced: Explain how other tables depend on this column
+- For columns with bi-directional relationships: Highlight their central role in connecting tables
+
 Respond with structured data for each column, focusing on business meaning rather than technical details.
-Ground your descriptions in the actual data examples when available.
+Ground your descriptions in the actual data examples when available and leverage the relationship context
+to explain how each column participates in the broader data ecosystem.
