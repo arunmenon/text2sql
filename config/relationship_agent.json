@@ -1,0 +1,38 @@
+{
+  "extractors": [
+    {
+      "type": "keyword_based",
+      "enabled": true
+    }
+  ],
+  "strategies": [
+    {
+      "type": "direct_foreign_key",
+      "enabled": true,
+      "priority": 1
+    },
+    {
+      "type": "common_column",
+      "enabled": true,
+      "priority": 2
+    },
+    {
+      "type": "concept_based_join",
+      "enabled": true,
+      "priority": 3
+    },
+    {
+      "type": "llm_based_join",
+      "enabled": true,
+      "priority": 4,
+      "params": {
+        "prompt_template": "relationship_discovery",
+        "confidence_threshold": 0.4
+      }
+    }
+  ],
+  "join_tree": {
+    "strategy": "confidence_based",
+    "max_path_length": 3
+  }
+}

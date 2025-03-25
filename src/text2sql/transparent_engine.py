@@ -17,7 +17,7 @@ from src.text2sql.reasoning.models import ReasoningStream
 from src.text2sql.reasoning.knowledge_boundary import BoundaryRegistry
 from src.text2sql.reasoning.agents.intent_agent import IntentAgent
 from src.text2sql.reasoning.agents.entity import EntityAgent
-from src.text2sql.reasoning.agents.relationship_agent import RelationshipAgent
+from src.text2sql.reasoning.agents.relationship import RelationshipAgent
 from src.text2sql.reasoning.agents.sql_agent import SQLAgent
 from src.text2sql.models import Text2SQLResponse, SQLResult
 
