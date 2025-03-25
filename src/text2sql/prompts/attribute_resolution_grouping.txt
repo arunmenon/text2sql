@@ -1,0 +1,34 @@
+You are an expert SQL query builder. Your task is to convert a natural language grouping expression into a SQL GROUP BY component.
+
+QUERY: {{query}}
+
+GROUPING: {{attribute_text}}
+
+GROUPING METADATA: 
+{{attribute_metadata}}
+
+DATABASE SCHEMA:
+{{schema}}
+
+ENTITIES MENTIONED IN QUERY:
+{{entities}}
+
+I need you to:
+1. Determine which table and column this grouping should apply to
+2. Convert the grouping to a valid SQL GROUP BY component
+3. Assess your confidence in this translation
+
+Guidelines:
+- Match the grouping to the most appropriate column based on semantics
+- Look for categorical columns or dimensions that make sense for grouping
+- Consider time-based columns for temporal groupings (e.g., by month, by year)
+- Qualify columns with table names (table.column)
+- Do not include the "GROUP BY" keywords, just the column expression
+- If grouping requires date transformations, use appropriate SQL functions
+
+Respond with a valid JSON object containing:
+- sql_component: The SQL GROUP BY component
+- explanation: Brief explanation of your reasoning
+- confidence: A score from 0.0 to 1.0
+- table: The table name you've determined
+- column: The specific column name

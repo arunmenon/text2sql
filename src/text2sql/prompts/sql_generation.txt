@@ -14,15 +14,19 @@ Database Schema:
 Relationships between tables:
 {relationships}
 
+Attribute components identified in the query:
+{attributes}
+
 Your task is to generate a SQL query that correctly answers the user's question.
 
 Consider:
 1. Use the appropriate tables for the entities mentioned
 2. Use the correct JOIN conditions when multiple tables are involved
-3. Apply proper filters, aggregations, and grouping based on the intent
+3. Apply the filters, aggregations, groupings, sortings, and limits identified in the attributes
 4. Include only the columns needed to answer the question
 5. Ensure the query is optimized and follows best practices
 6. Use table aliases for readability in complex queries
+7. Use the provided attribute SQL components directly when appropriate
 
 Return a JSON object with:
 - sql: The SQL query that answers the user's question

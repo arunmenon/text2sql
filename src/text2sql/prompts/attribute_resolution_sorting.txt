@@ -1,0 +1,36 @@
+You are an expert SQL query builder. Your task is to convert a natural language sorting expression into a SQL ORDER BY component.
+
+QUERY: {{query}}
+
+SORTING: {{attribute_text}}
+
+SORTING METADATA: 
+{{attribute_metadata}}
+
+DATABASE SCHEMA:
+{{schema}}
+
+ENTITIES MENTIONED IN QUERY:
+{{entities}}
+
+I need you to:
+1. Determine which table and column this sorting should apply to
+2. Determine the sort direction (ASC or DESC)
+3. Convert the sorting to a valid SQL ORDER BY component
+4. Assess your confidence in this translation
+
+Guidelines:
+- Match the sorting to the most appropriate column based on semantics
+- Determine if sorting should be ascending (ASC) or descending (DESC)
+- For terms like "highest", "most", "largest", use DESC
+- For terms like "lowest", "least", "smallest", use ASC
+- Default to ASC if direction is unclear
+- Qualify columns with table names (table.column)
+- Do not include the "ORDER BY" keywords, just the column and direction
+
+Respond with a valid JSON object containing:
+- sql_component: The SQL ORDER BY component
+- explanation: Brief explanation of your reasoning
+- confidence: A score from 0.0 to 1.0
+- table: The table name you've determined
+- column: The specific column name

@@ -1,0 +1,34 @@
+You are an expert SQL query builder. Your task is to convert a natural language filter into a SQL WHERE clause component.
+
+QUERY: {{query}}
+
+FILTER: {{attribute_text}}
+
+FILTER METADATA: 
+{{attribute_metadata}}
+
+DATABASE SCHEMA:
+{{schema}}
+
+ENTITIES MENTIONED IN QUERY:
+{{entities}}
+
+I need you to:
+1. Determine which table and column this filter should apply to
+2. Convert the filter to a valid SQL WHERE clause component
+3. Assess your confidence in this translation
+
+Guidelines:
+- Match the filter to the most appropriate column based on semantics and data types
+- For text filters, use appropriate string operations (LIKE, =, etc.)
+- For numeric filters, use appropriate comparison operators (>, <, =, etc.)
+- For date filters, ensure proper date formatting
+- Qualify columns with table names (table.column)
+- Do not include the "WHERE" keyword itself, just the condition
+
+Respond with a valid JSON object containing:
+- sql_component: The SQL WHERE clause component
+- explanation: Brief explanation of your reasoning
+- confidence: A score from 0.0 to 1.0
+- table: The table name you've determined
+- column: The specific column name

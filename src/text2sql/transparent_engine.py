@@ -15,10 +15,10 @@ from src.text2sql.utils.graph_context_provider import SemanticGraphContextProvid
 from src.text2sql.utils.prompt_loader import PromptLoader
 from src.text2sql.reasoning.models import ReasoningStream
 from src.text2sql.reasoning.knowledge_boundary import BoundaryRegistry
-from src.text2sql.reasoning.agents.intent_agent import IntentAgent
-from src.text2sql.reasoning.agents.entity import EntityAgent
-from src.text2sql.reasoning.agents.relationship import RelationshipAgent
-from src.text2sql.reasoning.agents.sql_agent import SQLAgent
+from src.text2sql.reasoning.agents import (
+    IntentAgent, EntityAgent, RelationshipAgent, 
+    AttributeAgent, SQLAgent
+)
 from src.text2sql.models import Text2SQLResponse, SQLResult
 
 
@@ -46,10 +46,8 @@ class TransparentQueryEngine:
         self.intent_agent = IntentAgent(llm_client, self.prompt_loader)
         self.entity_agent = EntityAgent(llm_client, self.graph_context, self.prompt_loader)
         self.relationship_agent = RelationshipAgent(llm_client, self.graph_context, self.prompt_loader)
+        self.attribute_agent = AttributeAgent(llm_client, self.graph_context, self.prompt_loader)
         self.sql_agent = SQLAgent(llm_client, self.graph_context, self.prompt_loader)
-        
-        # Will add more agents as we implement them:
-        # self.attribute_agent = AttributeAgent(...)
         
         # Store clients
         self.llm_client = llm_client
@@ -96,13 +94,13 @@ class TransparentQueryEngine:
         relationships_result = await self.relationship_agent.process(processing_context, reasoning_stream)
         processing_context["relationships"] = relationships_result
         
-        # Step 4: SQL Generation
+        # Step 4: Attribute Processing
+        attributes_result = await self.attribute_agent.process(processing_context, reasoning_stream)
+        processing_context["attributes"] = attributes_result
+        
+        # Step 5: SQL Generation
         sql_result = await self.sql_agent.process(processing_context, reasoning_stream)
         processing_context["sql_result"] = sql_result
-        
-        # For now, we'll use a simplified flow until we implement all agents
-        # In the future, we'll add:
-        # - Attribute Recognition
         
         # Use the SQL result from the SQLAgent
         primary_sql = SQLResult(
@@ -146,6 +144,7 @@ class TransparentQueryEngine:
         confidence_values = [
             intent_result["confidence"], 
             max([e["confidence"] for e in entities_result.values()]) if entities_result else 0.5,
+            attributes_result.get("confidence", 0.7),
             sql_result["confidence"]
         ]
         overall_confidence = min(confidence_values)
@@ -174,6 +173,7 @@ class TransparentQueryEngine:
                 "intent": intent_result,
                 "entities": entities_result,
                 "relationships": relationships_result,
+                "attributes": attributes_result,
                 "sql_generation": sql_result,
                 "knowledge_boundaries": boundary_registry.to_dict(),
                 "requires_clarification": requires_clarification,

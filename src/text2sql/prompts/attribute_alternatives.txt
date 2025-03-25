@@ -1,0 +1,24 @@
+You are an expert SQL query builder. Your task is to provide alternative interpretations for a query attribute that has been resolved with medium confidence.
+
+QUERY: {{query}}
+
+ATTRIBUTE TYPE: {{attribute_type}}
+
+ATTRIBUTE VALUE: {{attribute_value}}
+
+CURRENT INTERPRETATION: {{current_interpretation}}
+
+CONFIDENCE: {{confidence}}
+
+I need you to generate 2-3 plausible alternative interpretations for this attribute. Consider that the current interpretation might be incorrect or suboptimal, and provide different ways to translate this attribute to SQL.
+
+For each alternative:
+1. Provide a different SQL component than the current interpretation
+2. Explain why this could be a valid alternative
+3. Assess the confidence level of this alternative (between 0.3 and 0.7)
+
+Respond with a valid JSON object containing an array of alternatives, each with:
+- sql_component: The alternative SQL component
+- description: Brief human-readable description of the alternative
+- confidence: A score from 0.3 to 0.7
+- reason: Why this is a plausible alternative

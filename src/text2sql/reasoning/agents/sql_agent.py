@@ -13,6 +13,7 @@ from src.llm.client import LLMClient
 from src.text2sql.reasoning.agents.base import Agent
 from src.text2sql.reasoning.models import ReasoningStream, Alternative
 from src.text2sql.reasoning.knowledge_boundary import BoundaryType, KnowledgeBoundary, BoundaryRegistry
+from src.text2sql.reasoning.agents.attribute.base import AttributeType
 from src.text2sql.utils.prompt_loader import PromptLoader
 from src.text2sql.utils.graph_context_provider import SemanticGraphContextProvider
 
@@ -55,6 +56,7 @@ class SQLAgent(Agent):
         intent = context.get("intent", {})
         entities = context.get("entities", {})
         relationships = context.get("relationships", {})
+        attributes = context.get("attributes", {})
         boundary_registry = context.get("boundary_registry", BoundaryRegistry())
         tenant_id = context.get("tenant_id", "default")
         
@@ -316,6 +318,49 @@ class SQLAgent(Agent):
                     }
             relationships_json = json.dumps(rel_json, indent=2)
         
+        # Format attributes for the prompt
+        attributes_json = "null"
+        if attributes:
+            # Extract SQL components from attributes
+            attr_components = {}
+            
+            if AttributeType.FILTER in attributes:
+                attr_components["filters"] = [
+                    {"sql": attr.get("resolved_to"), "confidence": attr.get("confidence", 0.0)}
+                    for attr in attributes.get(AttributeType.FILTER, [])
+                    if attr.get("resolved_to")
+                ]
+            
+            if AttributeType.AGGREGATION in attributes:
+                attr_components["aggregations"] = [
+                    {"sql": attr.get("resolved_to"), "confidence": attr.get("confidence", 0.0)}
+                    for attr in attributes.get(AttributeType.AGGREGATION, [])
+                    if attr.get("resolved_to")
+                ]
+            
+            if AttributeType.GROUPING in attributes:
+                attr_components["groupings"] = [
+                    {"sql": attr.get("resolved_to"), "confidence": attr.get("confidence", 0.0)}
+                    for attr in attributes.get(AttributeType.GROUPING, [])
+                    if attr.get("resolved_to")
+                ]
+            
+            if AttributeType.SORTING in attributes:
+                attr_components["sortings"] = [
+                    {"sql": attr.get("resolved_to"), "confidence": attr.get("confidence", 0.0)}
+                    for attr in attributes.get(AttributeType.SORTING, [])
+                    if attr.get("resolved_to")
+                ]
+            
+            if AttributeType.LIMIT in attributes:
+                attr_components["limits"] = [
+                    {"sql": attr.get("resolved_to"), "confidence": attr.get("confidence", 0.0)}
+                    for attr in attributes.get(AttributeType.LIMIT, [])
+                    if attr.get("resolved_to")
+                ]
+            
+            attributes_json = json.dumps(attr_components, indent=2)
+        
         # Create prompt for LLM
         prompt = self.prompt_loader.format_prompt(
             "sql_generation",
@@ -324,7 +369,8 @@ class SQLAgent(Agent):
             intent_description=intent.get("explanation", ""),
             entity_mapping=entity_mapping,
             schema=schema_json,
-            relationships=relationships_json
+            relationships=relationships_json,
+            attributes=attributes_json
         )
         
         # Define schema for structured response

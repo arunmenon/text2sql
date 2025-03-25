@@ -1,0 +1,42 @@
+{
+  "extractors": [
+    {
+      "type": "keyword_based",
+      "enabled": true,
+      "priority": 10
+    },
+    {
+      "type": "nlp_based",
+      "enabled": true,
+      "priority": 20
+    },
+    {
+      "type": "llm_based",
+      "enabled": true,
+      "priority": 30
+    }
+  ],
+  "strategies": [
+    {
+      "type": "column_based",
+      "enabled": true,
+      "priority": 10,
+      "params": {}
+    },
+    {
+      "type": "semantic_concept",
+      "enabled": true,
+      "priority": 20,
+      "params": {}
+    },
+    {
+      "type": "llm_based",
+      "enabled": true,
+      "priority": 30,
+      "params": {
+        "temperature": 0.2,
+        "model": "default"
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+You are an expert SQL query builder. Your task is to convert a natural language aggregation into a SQL aggregation function.
+
+QUERY: {{query}}
+
+AGGREGATION: {{attribute_text}}
+
+AGGREGATION METADATA: 
+{{attribute_metadata}}
+
+DATABASE SCHEMA:
+{{schema}}
+
+ENTITIES MENTIONED IN QUERY:
+{{entities}}
+
+I need you to:
+1. Determine which aggregation function to use (COUNT, SUM, AVG, MAX, MIN, etc.)
+2. Identify the table and column to apply the aggregation to
+3. Convert the aggregation to a valid SQL expression
+4. Assess your confidence in this translation
+
+Guidelines:
+- Match the aggregation to the most appropriate column based on semantics and data types
+- For COUNT operations, determine if COUNT(*) or COUNT(column) is more appropriate
+- For SUM, AVG, MAX, MIN, find numeric columns that make sense for the operation
+- Qualify columns with table names (e.g., SUM(orders.total_amount))
+- Use proper SQL syntax for the aggregation function
+
+Respond with a valid JSON object containing:
+- sql_component: The SQL aggregation component
+- explanation: Brief explanation of your reasoning
+- confidence: A score from 0.0 to 1.0
+- table: The table name you've determined
+- column: The specific column name (or "*" for COUNT(*))
