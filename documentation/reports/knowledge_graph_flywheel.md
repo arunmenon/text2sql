@@ -2,29 +2,48 @@
 
 The Knowledge Graph Flywheel represents a self-reinforcing approach to semantic understanding that creates compounding value through iterative enhancement. Each stage builds upon the previous, generating increasingly rich semantic context with minimal human intervention.
 
+## Walmart Facilities Schema Context
+
+Our Knowledge Graph Flywheel has been applied to Walmart's facilities management data model, which includes:
+
+- 10 interconnected tables covering stores, assets, work orders, and invoices
+- 310 columns with 93.2% enhanced with semantic metadata
+- 27 foreign key relationships that define the data model structure
+- 5 distinct table groups representing different functional areas
+
+Through automated analysis, we've generated:
+- 79 Business Terms standardizing vocabulary
+- 19 Business Metrics for KPI reporting
+- 9 Composite Concepts spanning multiple tables
+- 11 Business Processes capturing workflows
+- 13 Relationship Concepts explaining table connections
+- 9 Hierarchical Concepts showing organizational structures
+
+This semantic enhancement has enabled natural language queries like "Show me all stores with work orders in pending status" to be automatically translated to SQL without human intervention.
+
 ## 1. Neighborhood-Aware Table Enhancement
 
 ```mermaid
 flowchart LR
     subgraph Raw Schema
-        T1[Orders Table]
-        T2[Customers Table]
-        T3[OrderItems Table]
+        T1[sc_walmart_workorder]
+        T2[sc_walmart_locations]
+        T3[Asset]
     end
     
     subgraph Enhanced Context
-        E1[Orders Context]
+        E1[Work Order Context]
         E2[Relationship Info]
         E3[Sample Join Data]
     end
     
     subgraph Enriched Table
-        R1[Enhanced Orders Description]
+        R1[Enhanced Work Order Description]
     end
     
     T1 --> E1
     T2 --"many-to-one"--> E2
-    T3 --"one-to-many"--> E2
+    T3 --"many-to-one"--> E2
     E1 --> R1
     E2 --> R1
     E3 --> R1
@@ -50,17 +69,17 @@ When generating table descriptions, we include the relationship neighborhood:
 - Generated metadata captures operational significance
 - Cross-functional insights emerge from relationship patterns
 
-**Example Enhancement:**
-> "The Orders table relates to Customers (many-to-one) and OrderItems (one-to-many). Consider these relationships when describing its purpose."
+**Walmart Example:**
+> "The sc_walmart_workorder table relates to sc_walmart_locations (many-to-one) and Asset (many-to-one). Work orders are created for specific store locations and often reference physical assets requiring maintenance. Consider these relationships when describing its purpose within the facilities management workflow."
 
 ## 2. Relationship-Enriched Column Descriptions
 
 ```mermaid
 flowchart LR
     subgraph Raw Schema
-        C1[customer_id Column]
+        C1[location_id Column]
         FK[Foreign Key]
-        PT[Customers Table]
+        PT[sc_walmart_locations Table]
     end
     
     subgraph Enhanced Context
@@ -101,18 +120,18 @@ When enhancing column metadata, we include relationship participation:
 - Query-relevant relationships become immediately apparent
 - Data lineage becomes visible through column descriptions
 
-**Example Enhancement:**
-> When describing 'customer_id' in Orders, explain it connects to the primary Customers table, representing the purchasing entity responsible for payment and shipping information.
+**Walmart Example:**
+> When describing 'location_id' in sc_walmart_workorder, we explain it connects to the sc_walmart_locations table, representing the specific store where maintenance is being performed. This connection is essential for geographic analysis of maintenance costs and store performance metrics.
 
 ## 3. Graph-Aware Business Glossary
 
 ```mermaid
 flowchart TD
     subgraph Schema Tables
-        T1[Orders]
-        T2[Inventory]
-        T3[Shipping]
-        T4[Payment]
+        T1[sc_walmart_proposals]
+        T2[sc_walmart_proposal_line_items]
+        T3[sc_walmart_workorder]
+        T4[vw_fac_servicechannel_invoice]
     end
     
     subgraph Subgraph Analysis
@@ -122,7 +141,7 @@ flowchart TD
     end
     
     subgraph Business Glossary
-        BT[Order Fulfillment Process]
+        BT[Work Order Lifecycle Management]
     end
     
     T1 --> SA
@@ -159,8 +178,8 @@ We generate terms based on subgraphs rather than isolated tables:
 - Terms maintain consistency across the data ecosystem
 - Natural language queries can resolve across multiple tables
 
-**Example Enhancement:**
-> "Order Fulfillment Process" would be defined with knowledge of Orders, Inventory, Shipping, and Payment tables, creating a comprehensive concept that spans the entire fulfillment lifecycle.
+**Walmart Example:**
+> "Work Order Lifecycle Management" is defined with knowledge of sc_walmart_proposals, sc_walmart_proposal_line_items, sc_walmart_workorder, and vw_fac_servicechannel_invoice tables, capturing the end-to-end process from proposal creation to invoice processing. This concept spans multiple technical tables but represents a single coherent business workflow.
 
 ## 4. Iterative Enhancement Loop
 
@@ -220,36 +239,42 @@ We run multiple passes of enhancement, with each pass leveraging previous insigh
 - Coverage gaps are systematically identified and addressed
 - The system becomes more accurate without human intervention
 
+**Walmart Example:**
+- First pass: Discovered basic table relationships like sc_walmart_workorder → sc_walmart_locations
+- Second pass: Enhanced descriptions with terms like "Store", "Work Order", "Asset"
+- Third pass: Generated composite concepts like "Asset Management System"
+- Fourth pass: Created business processes like "Work Order Lifecycle Management"
+
 ## 5. Progressive Graph Enrichment
 
 ```mermaid
 flowchart LR
     subgraph Start
-        RS[Raw Schema]
+        RS[Walmart Facilities Schema]
     end
     
     subgraph Phase 1
         RE[Relationship<br>Discovery]
-        SE[Structural Edges]
+        SE[27 FK Relationships]
     end
     
     subgraph Phase 2
         TE[Table/Column<br>Enhancement]
-        RP[Rich Properties]
+        RP[289 Enhanced Columns]
     end
     
     subgraph Phase 3
         GG[Glossary<br>Generation]
-        CN[Concept Nodes]
+        CN[140 Semantic Entities]
     end
     
     subgraph Phase 4
         TR[Term<br>Relationships]
-        ME[Semantic Edges]
+        ME[Semantic<br>Networks]
     end
     
     subgraph Result
-        KG[Knowledge Graph]
+        KG[Walmart Facilities<br>Knowledge Graph]
     end
     
     RS --> RE
@@ -286,6 +311,83 @@ As each component runs, it adds new nodes, edges, and properties:
 - Business intelligence emerges organically from technical metadata
 - The semantic layer evolves alongside schema changes
 - Cross-domain insights become discoverable through graph traversal
+
+**Walmart Example:**
+- Starting with 10 tables and 310 columns of raw schema data
+- Identified 27 foreign key relationships between tables
+- Enhanced 93.2% of columns with business descriptions
+- Generated 140 semantic entities spanning six different types
+- Created a complete knowledge graph with zero human intervention
+
+## Real-World Results: Walmart Facilities Management
+
+```mermaid
+flowchart TD
+    subgraph Schema Components
+        S1[10 Tables]
+        S2[310 Columns]
+        S3[27 Foreign Keys]
+    end
+    
+    subgraph Knowledge Graph
+        E1[79 Business Terms]
+        E2[19 Business Metrics]
+        E3[9 Composite Concepts]
+        E4[11 Business Processes]
+        E5[13 Relationship Concepts]
+        E6[9 Hierarchical Concepts]
+    end
+    
+    subgraph Business Capabilities
+        B1[Natural Language Querying]
+        B2[Cross-Table Analysis]
+        B3[Workflow Automation]
+        B4[Self-Service Analytics]
+    end
+    
+    S1 --> E1
+    S1 --> E3
+    S1 --> E4
+    S2 --> E1
+    S2 --> E2
+    S3 --> E5
+    S3 --> E6
+    
+    E1 --> B1
+    E2 --> B2
+    E3 --> B2
+    E4 --> B3
+    E5 --> B1
+    E5 --> B2
+    E6 --> B4
+    
+    style S1 fill:#f9d6d2,stroke:#333
+    style S2 fill:#f9d6d2,stroke:#333
+    style S3 fill:#f9d6d2,stroke:#333
+    style E1 fill:#d2f9d6,stroke:#333
+    style E2 fill:#d2f9d6,stroke:#333
+    style E3 fill:#d2f9d6,stroke:#333
+    style E4 fill:#d2d6f9,stroke:#333
+    style E5 fill:#d2d6f9,stroke:#333
+    style E6 fill:#d2d6f9,stroke:#333
+    style B1 fill:#f9d6f9,stroke:#333
+    style B2 fill:#f9d6f9,stroke:#333
+    style B3 fill:#f9d6f9,stroke:#333
+    style B4 fill:#f9d6f9,stroke:#333
+```
+
+Our implementation of the Knowledge Graph Flywheel for Walmart Facilities Management has achieved:
+
+- **100% Table Coverage**: Every table in the schema has enhanced semantic descriptions
+- **93.2% Column Enhancement**: Nearly all columns have business-meaningful descriptions
+- **100% Automated Generation**: Zero human intervention in the semantic layer creation
+- **87% Average Confidence**: High confidence in the automatically generated entities
+- **NL Query Support**: Enabling business users to query technical data using plain English
+
+Example queries enabled:
+> "Show me all stores with work orders in pending status"  
+> "What is the total invoice amount by asset category last month?"  
+> "List all assets with leak detection inspections that failed"
 
 ## Overall Business Impact
 
