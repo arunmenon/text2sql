@@ -59,9 +59,9 @@ flowchart LR
 
 When generating table descriptions, we include the relationship neighborhood:
 
-- Pass "parent" and "child" tables as context
-- Include relationship types and cardinality
-- Show sample data that demonstrates these relationships
+- Provide related tables discovered during relationship analysis
+- Include relationship types (one-to-many, many-to-many) and cardinality
+- Show sample join data that demonstrates these relationships in context
 
 **Value Proposition:**
 - Tables are understood within their ecosystem, not in isolation
