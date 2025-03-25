@@ -1,0 +1,42 @@
+{
+  "extractors": [
+    {
+      "type": "capitalization",
+      "enabled": true
+    },
+    {
+      "type": "keyword_based",
+      "enabled": true
+    },
+    {
+      "type": "noun_phrase",
+      "enabled": true
+    }
+  ],
+  "strategies": [
+    {
+      "type": "direct_table_match",
+      "enabled": true,
+      "priority": 1
+    },
+    {
+      "type": "glossary_term_match",
+      "enabled": true,
+      "priority": 2
+    },
+    {
+      "type": "semantic_concept_match",
+      "enabled": true,
+      "priority": 3
+    },
+    {
+      "type": "llm_based_resolution",
+      "enabled": true,
+      "priority": 4,
+      "params": {
+        "prompt_template": "entity_resolution",
+        "confidence_threshold": 0.4
+      }
+    }
+  ]
+}
