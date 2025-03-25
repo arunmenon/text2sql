@@ -1,0 +1,23 @@
+You need to resolve a semantic concept to its database implementation.
+
+The concept: "{concept}"
+
+Database Schema:
+{tables_text}
+
+{glossary_info}
+
+Your task is to determine how this concept should be implemented in SQL:
+
+1. First, understand what the concept means in business terms
+2. Then, determine which tables and columns are involved
+3. Consider both direct and indirect relationships
+4. Provide a suggested SQL fragment if possible
+
+Some concepts may be simple (mapping to single columns), while others may be:
+- Calculated fields (e.g., "Profit" = Revenue - Cost)
+- Aggregates (e.g., "Customer Lifetime Value")
+- Status concepts (e.g., "Active Customers" = filtered customer view)
+- Time-based concepts (e.g., "Quarterly Sales" = grouped by quarter)
+
+Provide your interpretation and implementation details in structured format.

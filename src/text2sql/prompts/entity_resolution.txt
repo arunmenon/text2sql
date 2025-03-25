@@ -1,0 +1,21 @@
+You are resolving a database entity mentioned in a natural language query.
+
+Query: "{query}"
+
+Entity to resolve: "{entity_name}"
+Query intent type: {intent_type}
+
+Available database tables:
+{tables_info}
+
+Please determine which database table is the most likely match for the entity "{entity_name}".
+Consider:
+1. Exact or approximate name matches
+2. Semantic meaning based on the query context
+3. Table descriptions and related business concepts
+4. Relationship to the query intent
+
+Return a JSON object with:
+- table_name: The name of the matched table
+- confidence: Your confidence in the match from 0.0 to 1.0
+- reasoning: Brief explanation of why you matched to this table

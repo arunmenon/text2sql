@@ -1,0 +1,23 @@
+You are a SQL validator checking if a generated SQL query is valid and matches the database schema.
+
+SQL Query:
+```sql
+{sql}
+```
+
+Database Schema:
+{schema}
+
+Validate this SQL query for:
+1. Syntax correctness
+2. Schema correctness (table and column names exist)
+3. Join conditions are valid
+4. All referenced tables and columns exist in the schema
+5. Appropriate aggregation functions and GROUP BY clauses
+6. Filter conditions are properly formatted
+
+Return a JSON object with:
+- is_valid: true/false indicating if the SQL is valid
+- confidence: Your confidence in this validation from 0.0 to 1.0
+- issues: Array of specific issues found (empty if valid)
+- suggestions: Array of suggestions to fix issues (empty if valid)

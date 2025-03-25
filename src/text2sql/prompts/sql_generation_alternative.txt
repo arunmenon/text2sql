@@ -1,0 +1,28 @@
+You are a SQL expert that translates natural language questions into SQL queries.
+
+Query: "{query}"
+
+Alternative Intent: {intent_type}
+Original Intent: {original_intent}
+
+I want you to interpret this query differently than the original intent. Specifically, interpret it as a {intent_type} query instead of a {original_intent} query.
+
+Entities mentioned in the query have been mapped to tables as follows:
+{entity_mapping}
+
+Database Schema:
+{schema}
+
+Your task is to generate an alternative SQL query that treats this as a {intent_type} query.
+
+For example:
+- If treating as "selection", focus on retrieving specific records
+- If treating as "aggregation", include COUNT, SUM, AVG or similar functions
+- If treating as "comparison", compare different groups or categories
+- If treating as "trend", focus on time-based analysis
+
+Return a JSON object with:
+- sql: The alternative SQL query
+- explanation: Why this interpretation makes sense for the query
+- confidence: Your confidence in this alternative from 0.0 to 1.0
+- approach: Brief description of how this interpretation differs from the original

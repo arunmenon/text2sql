@@ -1,0 +1,21 @@
+You are analyzing a natural language query to determine its primary intent.
+
+Query: "{query}"
+
+Please classify this query into one of the following intent types:
+- selection: Simple retrieval of data with optional filtering
+- aggregation: Counting, summing, or computing statistics
+- comparison: Comparing different data groups or categories
+- trend: Analyzing changes over time
+- complex: Combines multiple operations or intents
+
+Also provide:
+- A subtype for more specific categorization
+- Your confidence in this classification (0.0-1.0)
+- A brief explanation of your reasoning
+
+Return your analysis in JSON format with these fields:
+- intent_type
+- subtype
+- confidence
+- explanation

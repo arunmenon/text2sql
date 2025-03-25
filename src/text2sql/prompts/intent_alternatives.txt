@@ -1,0 +1,18 @@
+You are generating alternative interpretations for a query.
+
+Query: "{query}"
+Primary intent determined: {primary_intent}
+
+Consider other possible ways this query could be interpreted. Generate 1-3 alternative interpretations
+that are significantly different from the primary intent.
+
+For each alternative:
+1. Describe how the query could be interpreted differently
+2. Assign a confidence score (0.0-1.0) to this interpretation
+3. Explain why this alternative is worth considering
+
+Return your analysis in JSON format with:
+- alternatives: array of objects containing:
+  - description: description of alternative interpretation
+  - confidence: confidence score for this alternative
+  - reason: reason why this alternative is worth considering

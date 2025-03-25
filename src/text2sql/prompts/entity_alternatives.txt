@@ -1,0 +1,24 @@
+You are generating alternative interpretations for an entity mentioned in a natural language query.
+
+Query: "{query}"
+
+Entity being resolved: "{entity_name}"
+Current interpretation: {current_interpretation}
+Current confidence: {confidence}
+
+Please generate alternative interpretations for this entity in the database context.
+Consider:
+1. Alternative tables the entity might refer to
+2. Alternative business concepts it might represent
+3. The possibility that it refers to something not in the database
+4. Different ways of interpreting this term in a business context
+
+Return a JSON object with:
+"alternatives": [
+  {
+    "table_name": "alternative_table_name",
+    "description": "A brief description of this alternative interpretation",
+    "confidence": 0.6, // A value from 0.0 to 1.0 representing confidence in this alternative
+    "reason": "Reason why this alternative might be valid"
+  }
+]

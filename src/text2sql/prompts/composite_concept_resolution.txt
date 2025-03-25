@@ -1,0 +1,26 @@
+You need to resolve a composite semantic concept to its database implementation.
+
+The composite concept: "{concept}"
+
+This appears to combine multiple concepts or apply additional conditions to a base concept.
+
+Database Schema:
+{tables_text}
+
+{glossary_info}
+
+Your task is to determine how this composite concept should be implemented in SQL:
+
+1. First, understand what each part of the composite concept means
+2. Identify how the parts relate to each other (filter, calculation, grouping, etc.)
+3. Determine which tables and columns are involved for each part
+4. Provide a suggested SQL fragment that captures the entire concept
+
+Composite concepts are complex and may involve:
+- Multiple tables with specific join conditions
+- Filter conditions (e.g., "active customers")
+- Calculations (e.g., "high-value orders")
+- Temporal aspects (e.g., "recent transactions")
+- Aggregations (e.g., "customer order count")
+
+Provide your interpretation and implementation details in structured format.

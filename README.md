@@ -1,114 +1,144 @@
-# Text2SQL
+# Text2SQL Project
 
-A natural language to SQL conversion system with advanced schema discovery and relationship inference.
+A system that enhances database schema metadata using LLMs and builds a business glossary with proper graph structure.
 
 ## Overview
 
-Text2SQL is a system designed to convert natural language queries into SQL statements. It extracts schema information from databases, infers relationships between tables, and uses this graph representation to generate accurate SQL queries from natural language.
+The Text2SQL project creates a powerful database schema documentation system that uses:
+- Natural language queries to explore database schema
+- LLM-enhanced metadata for tables and columns
+- Enhanced business glossary with multi-agent generation approach
+- Weighted term mapping for better ambiguity resolution
+- Composite concept resolution for complex business terminology
+- Concept tagging for semantic understanding
+- Relationship inference
 
-## Architecture
-
-The system has the following components:
-
-1. **Schema Extraction** - Extracts schema information from databases or SQL files
-2. **Relationship Inference** - Uses pattern matching and LLM-based techniques to discover relationships
-3. **Graph Representation** - Stores schema and relationship information in Neo4j
-4. **Text2SQL Engine** - Converts natural language to SQL using the graph representation
-
-## Supported Schema Domains
-
-The system can load schemas from different domains:
-
-1. **Retail (Walmart)** - A comprehensive retail schema with 15 tables (Departments, Categories, Products, etc.)
-2. **Supply Chain** - A supply chain management schema with inventory, logistics, and warehouse operations
-3. **Merchandising** - A merchandising management schema focusing on products and promotions
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8+
-- Neo4j Database
-- Optional: OpenAI API key for LLM-based relationship inference
-
-### Installation
+## Installation
 
 1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Configure environment variables in `.env`:
-   ```
-   NEO4J_URI=neo4j://localhost:7687
-   NEO4J_USERNAME=neo4j
-   NEO4J_PASSWORD=password
-   # Optional for LLM relationship inference
-   OPENAI_API_KEY=your-api-key-here
-   ```
+2. Create a virtual environment: `python -m venv venv`
+3. Activate the environment: `source venv/bin/activate`
+4. Install dependencies: `pip install -r requirements.txt`
 
-### Loading a Schema
+## Configuration
 
-Load a schema from a supported domain with:
+Create a `.env` file with the following variables:
 
-```bash
-python load_schema_demo.py --schema-type [walmart|supply-chain|merchandising] --tenant-id my-tenant-id
+```
+NEO4J_URI=neo4j://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=password
+OPENAI_API_KEY=your-api-key
+LLM_MODEL=gpt-4o
+USE_ENHANCED_GLOSSARY=true  # Enable enhanced business glossary generation
 ```
 
-### Discovering Relationships
+## Usage
 
-After loading a schema, discover relationships with:
-
-```bash
-python simulate_relationships.py --tenant-id my-tenant-id [--schema-type walmart] [--use-llm]
-```
-
-### Running the Full Discovery Pipeline
-
-For the Walmart retail schema, run the complete discovery pipeline:
+The project provides a unified CLI for all operations:
 
 ```bash
-python run_walmart_discovery.py --tenant-id my-tenant-id [--use-llm]
+# Load schema into Neo4j
+./cli.py schema load --tenant-id test_tenant --schema-type merchandising
+
+# Detect relationships between tables
+./cli.py schema relationships --tenant-id test_tenant --use-llm
+
+# Run the enhancement workflow (with graph structure)
+./cli.py enhance run --tenant-id test_tenant --direct
+
+# Generate enhanced business glossary with multi-agent approach
+./cli.py enhance run --tenant-id test_tenant --direct --use-enhanced-glossary
+
+# Generate and normalize business glossary (legacy approach)
+./cli.py enhance glossary --tenant-id test_tenant
+./cli.py enhance normalize --tenant-id test_tenant
+
+# Generate concept tags
+./cli.py enhance concepts --tenant-id test_tenant
+
+# Check database content and graph structure
+./cli.py check database --tenant-id test_tenant
+./cli.py check graph --tenant-id test_tenant
+
+# Clear database and reload everything
+./cli.py utils clear --tenant-id test_tenant
 ```
 
-### Using the API
+## Project Structure
 
-Start the API server with:
-
-```bash
-python run_api.py
+```
+/text2sql/
+  ├── src/                  # Core source code
+  │   ├── text2sql/         # Main application code
+  │   │   ├── components/   # Core components
+  │   │   ├── enhanced_glossary/ # Enhanced business glossary generation
+  │   │   │   ├── agents/   # Specialized agents for term generation
+  │   │   │   ├── config/   # Externalized prompts and schemas
+  │   │   │   └── utils/    # Utilities for prompt loading, etc.
+  │   ├── schema_extraction/ # Schema extraction modules
+  │   ├── graph_storage/    # Neo4j integration
+  ├── tools/                # Command-line tools
+  │   ├── schema/           # Schema-related tools
+  │   ├── enhance/          # Enhancement tools
+  │   ├── check/            # Checking tools
+  │   └── utils/            # Utility tools
+  ├── cli.py                # Main CLI entry point
+  ├── setup.py              # Package setup
+  └── requirements.txt      # Dependencies
 ```
 
-## Schema Domains
+## Enhanced Business Glossary
 
-### Walmart Retail Schema
+The enhanced business glossary generator uses a multi-agent approach:
 
-A retail schema with 15 tables:
-- Departments
-- Categories
-- SubCategories
-- Suppliers
-- Products
-- LegacyProducts
-- DistributionCenters
-- DCInventory
-- Stores
-- StoreEmployees
-- Inventory
-- Sales
-- Promotions
-- Pricing
-- Returns
+1. **Term Generator Agent** - Creates initial business terms from schema
+2. **Term Refiner Agent** - Improves definitions and adds synonyms
+3. **Term Validator Agent** - Validates technical mappings and adds confidence scores
 
-### Supply Chain Schema
+Key features:
+- Weighted term mapping for resolving ambiguities
+- Composite concept resolution for complex business terms
+- Externalized prompts and schemas for better maintainability
+- Proper fallback mechanisms in case of failures
 
-A supply chain management schema with tables such as:
-- Warehouses
-- Suppliers
-- Items
-- PurchaseOrders
-- Inventory
-- ShippingCarriers
-- Shipments
-- ReplenishmentPlanning
-- Forecasting
+## Transparent Agentic Architecture
+
+The text2sql system uses a fully transparent, agentic architecture that provides complete visibility into the reasoning process:
+
+1. **ReasoningStream**: Captures the entire query processing journey with stages, steps, evidence, and alternatives.
+2. **Knowledge Boundaries**: Explicitly handles system limitations with clear communication about what the system doesn't know.
+3. **Multi-Agent Pipeline**: Specialized agents for different aspects of query understanding:
+
+   - **IntentAgent**: Determines query purpose and detects ambiguous/multiple intents
+     - Pattern-based intent recognition
+     - LLM-based classification
+     - Multiple intent detection
+     - Alternative generation
+
+   - **EntityAgent**: Identifies and resolves database entities with multiple resolution strategies
+     - DirectTableMatch: Matches names directly to tables
+     - GlossaryTermMatch: Resolves via business glossary terms
+     - SemanticConceptMatch: Resolves via knowledge graph concepts
+     - LLMBasedResolution: Uses LLM for complex entity resolution
+
+   - **RelationshipAgent**: Discovers relationships and join paths between entities
+     - DirectForeignKeyStrategy: Uses schema-defined relationships
+     - CommonColumnStrategy: Finds joins through column naming patterns
+     - ConceptBasedJoinStrategy: Uses semantic concepts for complex joins
+     - LLMBasedJoinStrategy: LLM-based join path discovery
+
+   - **SQLAgent**: Generates SQL queries using LLM with comprehensive context
+     - Context-aware generation with all collected information
+     - SQL validation against schema
+     - Alternative generation for ambiguous queries
+     - Fallback mechanisms for complex scenarios
+
+This architecture enables:
+- Full transparency into query processing
+- Explicit handling of edge cases 
+- Clear communication of system limitations
+- Improved query understanding through multiple specialized agents
+- LLM-based SQL generation with complete context
+
+For more details, see [Transparent Agentic Architecture](documentation/TRANSPARENT_AGENTIC_ARCHITECTURE.md)

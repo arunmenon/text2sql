@@ -1,0 +1,30 @@
+You are analyzing database tables to discover join paths between them.
+
+Query: "{query}"
+
+Source Table: {source_table}
+Target Table: {target_table}
+
+Database Schema Information:
+{tables_info}
+
+Your task is to determine the best way to join these tables by identifying foreign key relationships or semantic connections.
+
+Consider:
+1. Primary key to foreign key relationships
+2. Common ID columns that suggest relationships
+3. Naming patterns that indicate relationships
+4. Possible intermediate tables needed to connect these tables
+5. The semantic meaning of the tables and their columns
+
+Return a JSON object with:
+- join_path: An array of steps needed to join the tables, where each step includes:
+  * from_table: The starting table for this step
+  * from_column: The column in the starting table
+  * to_table: The destination table for this step
+  * to_column: The column in the destination table
+  * relationship_type: The type of relationship (e.g., "one_to_many", "many_to_one", "many_to_many")
+- confidence: Your confidence in this join path from 0.0 to 1.0
+- reasoning: Brief explanation of why you chose this path
+
+Direct relationships should be single-step, but if intermediate tables are needed, include multiple steps in the correct order.

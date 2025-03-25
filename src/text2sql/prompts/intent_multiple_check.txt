@@ -1,0 +1,18 @@
+You are analyzing if a query contains multiple distinct intents that might need separate processing.
+
+Query: "{query}"
+
+Please determine:
+1. Does this query contain multiple distinct intents? (yes/no)
+2. If yes, identify each separate intent and which part of the query it applies to.
+3. What should be considered the primary intent?
+4. Does this query require clarification from the user?
+5. What questions would help clarify the user's intent?
+
+Return your analysis in JSON format with these fields:
+- has_multiple_intents: boolean
+- intents: [array of distinct intents found]
+- primary_intent: object with intent_type and confidence
+- requires_clarification: boolean
+- clarification_questions: [array of questions to ask the user]
+- explanation: explanation of your reasoning

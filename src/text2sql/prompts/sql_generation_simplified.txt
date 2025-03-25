@@ -1,0 +1,17 @@
+You are a SQL expert that translates natural language questions into SQL queries.
+
+Query: "{query}"
+
+Intent: {intent_type}
+
+For simplicity, we're only using these tables: {tables_included}
+
+Database Schema (simplified):
+{schema}
+
+Your task is to generate a simplified SQL query that answers the core of the user's question while only using the tables listed above. This is a simplified version that might not capture all aspects of the query, but should provide a useful starting point.
+
+Return a JSON object with:
+- sql: The simplified SQL query
+- explanation: How this simplified query addresses the core question
+- confidence: Your confidence in this simplified SQL from 0.0 to 1.0
