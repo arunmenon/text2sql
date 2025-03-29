@@ -1,7 +1,7 @@
 """
-Enhanced MCP Protocol Handler Implementation
+Metadata Registry MCP Server Implementation
 
-This module implements an enhanced MCP protocol handler that connects
+This module implements a metadata-centric MCP protocol handler that connects
 to the metadata registry to expose services via MCP.
 """
 import os
@@ -18,11 +18,11 @@ from .feeds import ServiceMetadata
 
 logger = logging.getLogger(__name__)
 
-class EnhancedMCPHandler:
+class MetadataRegistryServer:
     """
-    Enhanced MCP Protocol Handler with metadata-centric approach.
+    Metadata Registry MCP Server with metadata-centric approach.
     
-    This handler connects to the metadata registry to discover services
+    This server connects to the metadata registry to discover services
     and exposes them via the MCP protocol, with security boundaries.
     """
     
@@ -32,7 +32,7 @@ class EnhancedMCPHandler:
         self.registry = registry or get_metadata_registry(config_path)
         self.trust_manager = get_trust_manager()
         self.server = None
-        logger.info("Enhanced MCP Protocol Handler initialized")
+        logger.info("Metadata Registry MCP Server initialized")
     
     def create_server(self) -> Server:
         """Create the MCP server with resources based on registry services."""
@@ -143,7 +143,7 @@ class EnhancedMCPHandler:
             if not self.server:
                 self.create_server()
             
-            logger.info(f"Starting Enhanced MCP server on {host}:{port}")
+            logger.info(f"Starting Metadata Registry MCP server on {host}:{port}")
             
             # Start the server
             self.server.run(host=host, port=port)
@@ -152,12 +152,12 @@ class EnhancedMCPHandler:
             self.registry.stop_discovery()
 
 
-def run_enhanced_server(config_path: Optional[str] = None, 
+def run_metadata_registry_server(config_path: Optional[str] = None, 
                        storage_path: Optional[str] = None,
                        host: str = "0.0.0.0", 
                        port: int = 8234):
     """
-    Run the enhanced MCP server with the given configuration.
+    Run the Metadata Registry MCP server with the given configuration.
     
     Args:
         config_path: Path to configuration file
@@ -173,8 +173,8 @@ def run_enhanced_server(config_path: Optional[str] = None,
     
     try:
         # Create and run the MCP server
-        handler = EnhancedMCPHandler(registry)
-        handler.run(host=host, port=port)
+        server = MetadataRegistryServer(registry)
+        server.run(host=host, port=port)
     finally:
         # Stop discovery
         registry.stop_discovery()

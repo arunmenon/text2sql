@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Run script for the Enhanced Metadata Registry with MCP.
+Run script for the Metadata Registry with MCP.
 
 This script provides a command-line interface to start the
-Enhanced Metadata Registry with MCP protocol support.
+Metadata Registry with MCP protocol support.
 """
 import os
 import sys
@@ -17,7 +17,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from src.mcp.registry.metadata_registry import get_metadata_registry
-from src.mcp.registry.enhanced_mcp_server import run_enhanced_server
+from src.mcp.registry.metadata_registry_server import run_metadata_registry_server
 
 # Configure logging
 logging.basicConfig(
@@ -27,8 +27,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    """Main entry point for the Enhanced Metadata Registry MCP Server."""
-    parser = argparse.ArgumentParser(description="Enhanced Metadata Registry MCP Server")
+    """Main entry point for the Metadata Registry MCP Server."""
+    parser = argparse.ArgumentParser(description="Metadata Registry MCP Server")
     parser.add_argument(
         "--config",
         default=str(Path(__file__).parent / "config" / "registry.yaml"),
@@ -89,15 +89,15 @@ def main():
     
     # Run the server
     try:
-        logger.info(f"Starting Enhanced Metadata Registry MCP Server on {args.host}:{args.port}")
-        run_enhanced_server(
+        logger.info(f"Starting Metadata Registry MCP Server on {args.host}:{args.port}")
+        run_metadata_registry_server(
             config_path=args.config,
             storage_path=args.storage,
             host=args.host,
             port=args.port
         )
     except Exception as e:
-        logger.error(f"Failed to start Enhanced Metadata Registry MCP Server: {str(e)}")
+        logger.error(f"Failed to start Metadata Registry MCP Server: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
