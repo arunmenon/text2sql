@@ -1,0 +1,146 @@
+# Service Registry Configuration
+
+# Server settings
+server:
+  host: 0.0.0.0
+  port: 8234
+  debug: true
+
+# Registry settings
+registry:
+  health_check_interval: 60  # seconds
+  state_file: "registry_state.json"  # Persist registry state between restarts
+
+# Service definitions
+services:
+  # Neo4j Knowledge Graph Service
+  - id: knowledge_graph
+    name: knowledge_graph
+    description: "Knowledge Graph for text-to-SQL operations"
+    service_type: neo4j
+    version: "1.0"
+    adapter: "./adapters/neo4j_adapter.py"
+    tags:
+      - knowledge_graph
+      - semantic
+      - sql
+    endpoints:
+      uri: ${NEO4J_URI:-neo4j://localhost:7687}
+    metadata:
+      username: ${NEO4J_USER:-neo4j}
+      password: ${NEO4J_PASSWORD:-password}
+    
+    # Operation definitions
+    operations:
+      - id: query
+        name: query
+        description: "Run a Cypher query against the knowledge graph"
+        version: "1.0"
+        schema:
+          type: object
+          properties:
+            query:
+              type: string
+              description: "Valid Cypher query string to execute"
+            parameters:
+              type: object
+              description: "Optional parameters for the Cypher query"
+          required:
+            - query
+      
+      - id: get_table_schema
+        name: get_table_schema
+        description: "Get detailed schema information for a table with column metadata"
+        version: "1.0"
+        schema:
+          type: object
+          properties:
+            table_name:
+              type: string
+              description: "Name of the table to retrieve schema for"
+            include_relationships:
+              type: boolean
+              description: "Whether to include relationships to other tables (default: false)"
+          required:
+            - table_name
+      
+      - id: find_relationships
+        name: find_relationships
+        description: "Find relationships between two entities in the knowledge graph"
+        version: "1.0"
+        schema:
+          type: object
+          properties:
+            source:
+              type: string
+              description: "Name of the source entity"
+            target:
+              type: string
+              description: "Name of the target entity"
+            max_depth:
+              type: integer
+              description: "Maximum path length to consider (default: 3)"
+          required:
+            - source
+            - target
+      
+      - id: search_business_terms
+        name: search_business_terms
+        description: "Search for business terms by keyword"
+        version: "1.0"
+        schema:
+          type: object
+          properties:
+            keyword:
+              type: string
+              description: "Search keyword for business terms"
+          required:
+            - keyword
+      
+      - id: recommend_tables_for_query
+        name: recommend_tables_for_query
+        description: "Suggest relevant tables based on a natural language query"
+        version: "1.0"
+        schema:
+          type: object
+          properties:
+            query:
+              type: string
+              description: "Natural language query to analyze"
+            limit:
+              type: integer
+              description: "Maximum number of tables to recommend (default: 5)"
+          required:
+            - query
+
+  # Example of another service that could be added in the future
+  # - id: document_store
+  #   name: document_store
+  #   description: "Document repository for semantic search"
+  #   service_type: elasticsearch
+  #   version: "1.0"
+  #   adapter: "./adapters/elasticsearch_adapter.py"
+  #   tags:
+  #     - documents
+  #     - search
+  #   endpoints:
+  #     uri: ${ES_URL:-http://localhost:9200}
+  #   metadata:
+  #     username: ${ES_USER:-elastic}
+  #     password: ${ES_PASSWORD:-password}
+  #   operations:
+  #     - id: search_documents
+  #       name: search_documents
+  #       description: "Search for documents by query"
+  #       version: "1.0"
+  #       schema:
+  #         type: object
+  #         properties:
+  #           query:
+  #             type: string
+  #             description: "Search query"
+  #           limit:
+  #             type: integer
+  #             description: "Maximum results (default: 10)"
+  #         required:
+  #           - query
