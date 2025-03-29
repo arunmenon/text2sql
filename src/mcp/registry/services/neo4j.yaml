@@ -1,0 +1,91 @@
+# Neo4j Knowledge Graph Service Definition
+
+service_id: kg-neo4j
+name: knowledge_graph
+description: "Knowledge Graph for text-to-SQL operations"
+service_type: "neo4j"
+version: "1.0.0"
+endpoints:
+  uri: ${NEO4J_URI:-neo4j://localhost:7687}
+metadata:
+  username: ${NEO4J_USER:-neo4j}
+  password: ${NEO4J_PASSWORD:-password}
+  verification:
+    type: "local"
+    host: "localhost"
+tags:
+  - knowledge_graph
+  - database
+  - semantic
+  - text2sql
+operations:
+  - name: query
+    description: "Run a Cypher query against the knowledge graph"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Valid Cypher query string to execute"
+        parameters:
+          type: object
+          description: "Optional parameters for the Cypher query"
+      required:
+        - query
+  
+  - name: get_table_schema
+    description: "Get detailed schema information for a table with column metadata"
+    schema:
+      type: object
+      properties:
+        table_name:
+          type: string
+          description: "Name of the table to retrieve schema for"
+        include_relationships:
+          type: boolean
+          description: "Whether to include relationships to other tables (default: false)"
+      required:
+        - table_name
+  
+  - name: find_relationships
+    description: "Find relationships between two entities in the knowledge graph"
+    schema:
+      type: object
+      properties:
+        source:
+          type: string
+          description: "Name of the source entity"
+        target:
+          type: string
+          description: "Name of the target entity"
+        max_depth:
+          type: integer
+          description: "Maximum path length to consider (default: 3)"
+      required:
+        - source
+        - target
+  
+  - name: search_business_terms
+    description: "Search for business terms by keyword"
+    schema:
+      type: object
+      properties:
+        keyword:
+          type: string
+          description: "Search keyword for business terms"
+      required:
+        - keyword
+  
+  - name: recommend_tables_for_query
+    description: "Suggest relevant tables based on a natural language query"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Natural language query to analyze"
+        limit:
+          type: integer
+          description: "Maximum number of tables to recommend (default: 5)"
+      required:
+        - query
