@@ -74,15 +74,76 @@ Services are defined in YAML files in the `services` directory. The Neo4j servic
    - Running semantic queries
    - Generating SQL based on natural language
 
-## Extending
+## Dynamic Service Discovery and Registration
 
-To add new services:
+The registry automatically discovers and loads services from multiple sources:
 
-1. Create a new service definition in `services/`
-2. Implement an adapter in `adapters/`
-3. Register the service operations
+1. **File-based discovery**: Services defined in YAML/JSON files in the `data/services/` directory 
+2. **HTTP-based discovery**: Services exposed through configured HTTP endpoints
+3. **Plugin-based discovery**: Python modules that expose service definitions
+4. **API-based registration**: Services can register themselves via HTTP API
 
-The discovery system will automatically find and expose the new service.
+To add a new service, you have multiple options:
+
+### 1. File-based (most common)
+
+Create a YAML file in the `data/services/` directory:
+
+```yaml
+service_id: my-service-id
+name: my_service
+description: "Description of my service"
+service_type: "service_type"
+operations:
+  - name: operation_name
+    description: "Operation description"
+    schema: { ... }
+```
+
+The registry automatically discovers this file and registers the service.
+
+### 2. API-based (for dynamic registration)
+
+Services can register themselves by making a POST request to the API server:
+
+```
+POST http://localhost:8235/services
+Content-Type: application/json
+
+{
+  "service_id": "my-service-id",
+  "name": "my_service",
+  "description": "Description of my service",
+  "operations": [...]
+}
+```
+
+The API server can be started with the `run_api_server.sh` script.
+
+### 3. Custom discovery feeds
+
+You can implement custom discovery feeds to load services from other sources:
+
+```python
+from src.mcp.registry.feeds import DiscoveryFeed
+
+class MyCustomFeed(DiscoveryFeed):
+    def start(self):
+        # Start discovery
+        
+    def stop(self):
+        # Stop discovery
+        
+    def refresh(self):
+        # Find services and notify callbacks
+        service = ServiceMetadata(...)
+        self.notify_service_discovered(service)
+
+# Register with registry
+registry.feeds.register_feed(MyCustomFeed("my_feed"))
+```
+
+See `examples/custom_discovery_feed.py` for a complete example.
 
 ## Decoupled Design
 

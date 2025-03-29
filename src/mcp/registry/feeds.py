@@ -134,10 +134,12 @@ class FileSystemFeed(DiscoveryFeed):
     File system based service discovery feed.
     
     Discovers services from configuration files in a directory.
+    Supports both polling and event-based notification (where available).
     """
     
     def __init__(self, name: str, directory: str, pattern: str = "*.{json,yaml,yml}", 
-                 poll_interval: int = 0, enabled: bool = True):
+                 poll_interval: int = 0, enabled: bool = True, 
+                 use_events: bool = True):
         """
         Initialize the file system feed.
         
@@ -147,15 +149,22 @@ class FileSystemFeed(DiscoveryFeed):
             pattern: File pattern to match
             poll_interval: Interval in seconds to poll for changes (0 = no polling)
             enabled: Whether the feed is enabled
+            use_events: Whether to use event-based notification when available (faster than polling)
         """
         super().__init__(name, enabled)
         self.directory = directory
         self.pattern = pattern
         self.poll_interval = poll_interval
+        self.use_events = use_events
         self.running = False
         self.poll_thread = None
+        self.watch_thread = None
         self.last_scan_time = 0
         self.known_files: Dict[str, float] = {}  # path -> mtime
+        
+        # Track if we're using an event-based watcher
+        self.using_events = False
+        self.watcher = None
     
     def start(self):
         """Start the file system feed."""
@@ -170,8 +179,11 @@ class FileSystemFeed(DiscoveryFeed):
         # Perform initial scan
         self.refresh()
         
-        # Start polling if interval > 0
-        if self.poll_interval > 0:
+        # Try to set up file system watcher if available and requested
+        if self.use_events and self._setup_file_watcher():
+            logger.info(f"Using event-based file watching for feed {self.name}")
+        # Fall back to polling if events not available or failed
+        elif self.poll_interval > 0:
             self.running = True
             self.poll_thread = threading.Thread(
                 target=self._poll_loop,
@@ -180,12 +192,72 @@ class FileSystemFeed(DiscoveryFeed):
             self.poll_thread.start()
             logger.info(f"Started polling for feed {self.name} every {self.poll_interval} seconds")
     
+    def _setup_file_watcher(self) -> bool:
+        """
+        Set up file system event watcher if available.
+        
+        Returns:
+            True if event watcher was set up, False otherwise
+        """
+        try:
+            # Try to import watchdog for file system events
+            try:
+                from watchdog.observers import Observer
+                from watchdog.events import FileSystemEventHandler
+            except ImportError:
+                logger.debug("Watchdog package not available, falling back to polling")
+                return False
+            
+            # Define event handler
+            class ServiceFileHandler(FileSystemEventHandler):
+                def __init__(self, feed):
+                    self.feed = feed
+                
+                def on_created(self, event):
+                    if not event.is_directory:
+                        logger.debug(f"File created: {event.src_path}")
+                        self.feed.refresh()
+                
+                def on_modified(self, event):
+                    if not event.is_directory:
+                        logger.debug(f"File modified: {event.src_path}")
+                        self.feed.refresh()
+                
+                def on_moved(self, event):
+                    if not event.is_directory:
+                        logger.debug(f"File moved: {event.dest_path}")
+                        self.feed.refresh()
+            
+            # Create observer and start watching
+            observer = Observer()
+            event_handler = ServiceFileHandler(self)
+            observer.schedule(event_handler, self.directory, recursive=False)
+            observer.start()
+            
+            # Store reference to observer
+            self.watcher = observer
+            self.using_events = True
+            
+            return True
+        except Exception as e:
+            logger.warning(f"Error setting up file watcher: {str(e)}")
+            return False
+    
     def stop(self):
         """Stop the file system feed."""
         self.running = False
+        
+        # Stop polling thread if active
         if self.poll_thread:
             self.poll_thread.join(timeout=5)
             self.poll_thread = None
+        
+        # Stop file watcher if active
+        if self.watcher:
+            self.watcher.stop()
+            self.watcher.join(timeout=5)
+            self.watcher = None
+            self.using_events = False
     
     def refresh(self):
         """

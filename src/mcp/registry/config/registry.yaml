@@ -1,117 +1,55 @@
 # Metadata Registry Configuration
 
-# Registry settings
-storage_path: "./registry_data"  # Where to store registry state
+# Storage configuration
+storage:
+  path: "${STORAGE_PATH:-./data}"
+  persistence: true
 
-# Discovery feed configuration
-feeds:
-  # File-based feed
-  - name: local_config
-    type: file
-    enabled: true
-    directory: "./services"  # Directory with service definitions
-    pattern: "*.{json,yaml,yml}"
-    poll_interval: 30  # Check for changes every 30 seconds
+# Service discovery configuration
+discovery:
+  # Automatic discovery on startup
+  auto_discover: true
   
-  # HTTP-based feed (can discover remote services)
-  - name: remote_registry
-    type: http
-    enabled: true
-    urls:
-      - "https://example.com/services/registry.json"
-    poll_interval: 300  # Poll every 5 minutes
-  
-  # Plugin-based feed (can discover plugins in code)
-  - name: plugins
-    type: plugin
-    enabled: true
-    plugin_dirs:
-      - "./plugins"
-      - "./src/mcp/registry/adapters"
+  # Feeds for discovering services
+  feeds:
+    # Local filesystem feed - discovers services from YAML/JSON files
+    - name: "local_files"
+      type: "file"
+      enabled: true
+      directory: "${SERVICES_DIR:-./data/services}"
+      pattern: "*.{json,yaml,yml}"
+      poll_interval: 30  # Check for changes every 30 seconds
+    
+    # HTTP feed - discovers services from remote endpoints
+    - name: "http_registry"
+      type: "http"
+      enabled: true
+      urls:
+        - "${SERVICE_REGISTRY_URL:-http://localhost:8235/services}"
+      poll_interval: 300  # Poll every 5 minutes
+    
+    # Plugin feed - discovers services from Python modules
+    - name: "plugins"
+      type: "plugin"
+      enabled: true
+      plugin_dirs:
+        - "${PLUGIN_DIR:-./plugins}"
+      pattern: "*_service.py"
 
-# Neo4j service definition
-services:
-  - service_id: kg-neo4j
-    name: knowledge_graph
-    description: "Knowledge Graph for text-to-SQL operations"
-    service_type: "neo4j"
-    version: "1.0.0"
-    endpoints:
-      uri: ${NEO4J_URI:-neo4j://localhost:7687}
-    metadata:
-      username: ${NEO4J_USER:-neo4j}
-      password: ${NEO4J_PASSWORD:-password}
-      verification:
-        type: "local"
-        host: "localhost"
-    operations:
-      - name: query
-        description: "Run a Cypher query against the knowledge graph"
-        schema:
-          type: object
-          properties:
-            query:
-              type: string
-              description: "Valid Cypher query string to execute"
-            parameters:
-              type: object
-              description: "Optional parameters for the Cypher query"
-          required:
-            - query
-      
-      - name: get_table_schema
-        description: "Get detailed schema information for a table with column metadata"
-        schema:
-          type: object
-          properties:
-            table_name:
-              type: string
-              description: "Name of the table to retrieve schema for"
-            include_relationships:
-              type: boolean
-              description: "Whether to include relationships to other tables (default: false)"
-          required:
-            - table_name
-      
-      - name: find_relationships
-        description: "Find relationships between two entities in the knowledge graph"
-        schema:
-          type: object
-          properties:
-            source:
-              type: string
-              description: "Name of the source entity"
-            target:
-              type: string
-              description: "Name of the target entity"
-            max_depth:
-              type: integer
-              description: "Maximum path length to consider (default: 3)"
-          required:
-            - source
-            - target
-      
-      - name: search_business_terms
-        description: "Search for business terms by keyword"
-        schema:
-          type: object
-          properties:
-            keyword:
-              type: string
-              description: "Search keyword for business terms"
-          required:
-            - keyword
-      
-      - name: recommend_tables_for_query
-        description: "Suggest relevant tables based on a natural language query"
-        schema:
-          type: object
-          properties:
-            query:
-              type: string
-              description: "Natural language query to analyze"
-            limit:
-              type: integer
-              description: "Maximum number of tables to recommend (default: 5)"
-          required:
-            - query
+# Trust and security
+trust:
+  enabled: true
+  auto_verify: "${AUTO_VERIFY:-true}"  # Auto-verify local services for development
+  consent_required: "${CONSENT_REQUIRED:-false}"  # Whether user consent is required for operations
+  
+# Server configuration
+server:
+  host: "${HOST:-0.0.0.0}"
+  port: "${PORT:-8234}"
+  debug: "${DEBUG:-false}"
+
+# Neo4j configuration (used if Neo4j is the default service)
+neo4j:
+  uri: "${NEO4J_URI:-neo4j://localhost:7687}"
+  username: "${NEO4J_USER:-neo4j}"
+  password: "${NEO4J_PASSWORD:-neo4j}"

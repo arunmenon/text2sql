@@ -389,6 +389,67 @@ class MetadataRegistry:
             # Save registry state
             if self.storage_path:
                 self._save_registry_state()
+    
+    def watch_for_changes(self, interval: int = 30):
+        """
+        Start a background thread to watch for changes in service definitions.
+        
+        This is useful when you want more frequent updates than the normal
+        polling interval of a feed, or to detect services that register
+        themselves via API.
+        
+        Args:
+            interval: Polling interval in seconds
+        """
+        def _watch_thread():
+            logger.info(f"Starting service definition watch thread (interval: {interval}s)")
+            while True:
+                try:
+                    time.sleep(interval)
+                    self.refresh_discovery()
+                except Exception as e:
+                    logger.error(f"Error in watch thread: {str(e)}")
+                    # Keep thread running despite errors
+        
+        # Start watch thread
+        watch_thread = threading.Thread(
+            target=_watch_thread,
+            daemon=True
+        )
+        watch_thread.start()
+    
+    def add_service_from_dict(self, service_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Add a service from a dictionary of service data.
+        
+        This is useful for programmatically registering services
+        or for adding services via an API endpoint.
+        
+        Args:
+            service_data: Dictionary of service metadata
+            
+        Returns:
+            Service ID if registered successfully, None otherwise
+        """
+        try:
+            # Generate service ID if not provided
+            service_id = service_data.get("service_id", service_data.get("id"))
+            if not service_id:
+                name = service_data.get("name", "unnamed")
+                service_id = f"{name}-{uuid.uuid4()}"
+                service_data["service_id"] = service_id
+            
+            # Create service metadata
+            service = ServiceMetadata.from_dict(service_data)
+            service.source = "api"
+            
+            # Register the service
+            if self.register_service(service):
+                return service_id
+            return None
+        except Exception as e:
+            logger.error(f"Error adding service from dict: {str(e)}")
+            return None
 
 
 # Singleton instance
