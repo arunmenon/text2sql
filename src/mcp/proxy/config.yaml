@@ -1,0 +1,60 @@
+# MCP Proxy Configuration
+
+# Server settings
+server:
+  host: 0.0.0.0
+  port: 8234
+  debug: true
+
+# Service configurations
+services:
+  - name: knowledge_graph
+    type: neo4j
+    enabled: true
+    description: Knowledge Graph for text-to-SQL operations
+    connection:
+      url: ${NEO4J_URI:-neo4j://localhost:7687}
+      username: ${NEO4J_USER:-neo4j}
+      password: ${NEO4J_PASSWORD:-password}
+    
+    # Define operations available through this service
+    operations:
+      - name: query
+        description: Run a Cypher query against the knowledge graph
+        method: POST
+        endpoint: /tools/knowledge_graph.query
+      
+      - name: get_table_schema
+        description: Get detailed schema information for a table with column metadata
+        method: POST
+        endpoint: /tools/knowledge_graph.get_table_schema
+      
+      - name: find_relationships
+        description: Find relationships between two entities
+        method: POST
+        endpoint: /tools/knowledge_graph.find_relationships
+      
+      - name: search_business_terms
+        description: Search for business terms by keyword
+        method: POST
+        endpoint: /tools/knowledge_graph.search_business_terms
+      
+      - name: recommend_tables_for_query
+        description: Suggest relevant tables based on a query
+        method: POST
+        endpoint: /tools/knowledge_graph.recommend_tables_for_query
+
+  # Example of another service you might add in the future
+  # - name: document_store
+  #   type: elasticsearch
+  #   enabled: false
+  #   description: Document store for semantic search
+  #   connection:
+  #     url: ${ES_URL:-http://localhost:9200}
+  #     username: ${ES_USER:-elastic}
+  #     password: ${ES_PASSWORD:-password}
+  #   operations:
+  #     - name: search
+  #       description: Search for documents
+  #       method: POST
+  #       endpoint: /api/search
